@@ -44,4 +44,4 @@ button.addEventListener('click', async () => {
 });
 
 if (window.location.origin === 'https://frontierdom.com') readSession();
-else status.textContent = 'Open this check on https://frontierdom.com/auth-check/.';
+else status.textContent = 'Open this check on https://frontierdom.com/auth-check.';
