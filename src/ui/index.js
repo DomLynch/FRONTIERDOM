@@ -1,7 +1,7 @@
 import './ui.css';
 import { acceptSnapshot, isDefiniteRejection, maximumQuote, pendingKey, removeResolvedPending } from './commands.js';
 import { createLoginAttempt, authReturnMessage, pendingMatchesAccount } from './auth.js';
-import { voyageObjective, quoteObjective, readGuidance, saveGuidance } from './guidance.js';
+import { voyageObjective, reviewObjective, readGuidance, saveGuidance } from './guidance.js';
 
 const money = (pence) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(pence / 100);
 const signed = (pence) => `${pence > 0 ? '+' : ''}${money(pence)}`;
@@ -12,7 +12,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
   let state, selectedLocation, busy = false, destroyed = false, quote = null, pending = null;
   let notice = '', error = '', mode = 'buy', quantities = new Map(), sessionReady = false, recoveryReady = false;
   let restoreFocus = null;
-  let panel = null, guidanceVisible = true, guidanceCompany;
+  let panel = null, guidanceVisible = true, guidanceCompany, fallbackObjective;
   let user = null, authChecked = false, accountMismatch = false, loginBusy = false, loginSequence = 0;
   const loginAttempt = createLoginAttempt(api, (url) => window.location.assign(url), { authOrigin: googleAuthOrigin, siteOrigin: window.location.origin });
   const storage = () => window.localStorage;
@@ -26,7 +26,9 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
   function accept(incoming) {
     if (destroyed) return;
     if (state && state.companyId !== incoming.companyId) recoveryReady = false;
+    const previous = state;
     state = acceptSnapshot(state, incoming);
+    if (previous?.revision !== state.revision || previous?.companyId !== state.companyId) fallbackObjective = null;
     if (guidanceCompany !== state.companyId) {
       guidanceCompany = state.companyId;
       guidanceVisible = readGuidance(storage(), state.companyId);
@@ -184,7 +186,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
       return `<article class="fd-commodity"><div class="fd-item-head"><span class="fd-item-symbol" aria-hidden="true">${String(index + 1).padStart(2, '0')}</span><div><h3>${escape(item.name)}</h3><p>${item.stockUnits} in market · ${cargo?.quantity || 0} aboard</p></div></div><div class="fd-price"><strong>${money(mode === 'buy' ? item.buyUnitPence : item.sellUnitPence)}</strong><span>indicative / unit</span></div><p class="fd-comparison">${place(comparison?.locationId)} buys at <b>${other ? money(other.sellUnitPence) : '—'}</b></p>${cargo?.quantity ? `<p class="fd-basis">Cargo acquisition cost ${money(cargo.costBasisPence)}</p>` : ''}${here ? `<div class="fd-trade-controls"><label class="fd-quantity">Units<input aria-label="${escape(item.name)} quantity" data-quantity="${escape(item.id)}" data-focus="qty-${escape(item.id)}" type="number" inputmode="numeric" min="1" max="${ceiling}" step="1" value="${quantity}" ${disabled || !ceiling ? 'disabled' : ''}></label><button class="fd-quiet" data-action="max" data-id="${escape(item.id)}" ${disabled || !ceiling ? 'disabled' : ''}>Max</button><button data-action="quote" data-id="${escape(item.id)}" data-focus="trade-${escape(item.id)}" ${disabled || !ceiling ? 'disabled' : ''}>Review ${mode}</button></div>` : '<p class="fd-away">Travel here to trade</p>'}</article>`;
     }).join('');
     const receipts = [...state.receipts].sort((a, b) => b.revision - a.revision).slice(0, 5);
-    const objective = voyageObjective(state);
+    const objective = fallbackObjective || voyageObjective(state);
     const captain = state.crew.find(c => c.role === 'captain');
     const last = receipts[0];
     const confirmedArrival = last?.action.type === 'travel' && last.locationAfter === 'eden';
@@ -258,10 +260,12 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
     if (pending || !recoveryReady || !user || !authChecked) return;
     await task(async () => {
       if (action === 'next') {
-        const objective = voyageObjective(state);
+        const objective = fallbackObjective || voyageObjective(state);
         if (objective.panel) { panel = objective.panel; selectedLocation = state.locationId; return; }
         restoreFocus = 'next';
-        quote = await quoteObjective(api, state, objective);
+        const reviewed = await reviewObjective(api, state, objective);
+        quote = reviewed.quote;
+        fallbackObjective = reviewed.objective;
         return;
       }
       if (action === 'confirm') {

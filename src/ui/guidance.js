@@ -64,3 +64,18 @@ export async function quoteObjective(api, state, objective) {
   } };
   return maximumQuote(reservedApi, { type:'buy', commodityId:objective.action.commodityId }, objective.action.quantity);
 }
+
+// Only a completed exact quote search may change a cargo suggestion to a crossing.
+export async function reviewObjective(api, state, objective) {
+  try { return { quote:await quoteObjective(api,state,objective), objective }; }
+  catch (error) {
+    if (objective.action.type !== 'buy' || error.code !== 'NO_AVAILABLE_UNITS') throw error;
+    const route=state.routes.find(r=>r.from===state.locationId);
+    if (!route || state.cashPence<route.travelCostPence) throw error;
+    const next={ id:`travel-${route.to}`, title:'Review the crossing without extra cargo',
+      story:'No cargo load fits the current quotes while reserving your fare. You can cross with your existing hold and inspect the other port.',
+      label:`Review crossing to ${route.to==='earth' ? 'Earth' : 'Eden'}`, action:{type:'travel',destinationId:route.to} };
+    // A stale fare or provider outage remains an error; never substitute a guessed quote.
+    return { quote:(await api.quote(next.action)).quote, objective:next };
+  }
+}

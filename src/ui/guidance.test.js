@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState, quoteAction, applyAction } from '../sim/economy/index.js';
-import { voyageObjective, quoteObjective, guidanceKey, readGuidance, saveGuidance } from './guidance.js';
+import { voyageObjective, quoteObjective, reviewObjective, guidanceKey, readGuidance, saveGuidance } from './guidance.js';
 import { pendingKey } from './commands.js';
 
 const settle = (state, action) => applyAction(state, action, { commandId:crypto.randomUUID(), receiptId:crypto.randomUUID(), occurredAt:'2026-10-05T18:00:00Z' }).state;
@@ -54,4 +54,26 @@ test('guidance preference is per company and never reads or removes pending trad
   assert.equal(readGuidance(storage,'A'),false); assert.equal(readGuidance(storage,'B'),true);
   saveGuidance(storage,'A',true); assert.equal(values.get(pendingKey()),'exact unresolved intent');
   assert.notEqual(guidanceKey('A'),pendingKey());
+});
+
+test('exact zero-cargo quotes offer affordable travel for Earth £351 and Eden £251', async () => {
+  for (const [port,cash] of [['earth',35100],['eden',25100]]) {
+    const state=createInitialState(port);state.locationId=port;state.cashPence=cash;
+    const seen=[];
+    const api={async quote(action){seen.push(action);return {quote:{action,...quoteAction(state,action)}};}};
+    const reviewed=await reviewObjective(api,state,voyageObjective(state));
+    assert.equal(reviewed.quote.action.type,'travel');
+    assert.equal(reviewed.objective.id,port==='earth' ? 'travel-eden' : 'travel-earth');
+    assert.ok(seen.some(a=>a.type==='buy'&&a.quantity===1),'one-unit quote establishes cargo unaffordable');
+    assert.ok(reviewed.quote.debitPence<=cash);
+    assert.equal(state.revision,0);assert.equal(state.ship.cargo.length,0);
+  }
+});
+
+test('cargo and fallback-crossing outages propagate without inventing a route quote', async () => {
+  const state=createInitialState('outage');state.cashPence=35100;
+  const outage=Object.assign(new Error('Offline'),{code:'UNAVAILABLE'});
+  await assert.rejects(reviewObjective({quote:async()=>{throw outage;}},state,voyageObjective(state)),e=>e===outage);
+  const api={async quote(action){if(action.type==='travel')throw outage;return {quote:{action,...quoteAction(state,action)}};}};
+  await assert.rejects(reviewObjective(api,state,voyageObjective(state)),e=>e===outage);
 });
