@@ -35,6 +35,50 @@ Posture: defensive/balanced/aggressive. Cargo intent: boolean. Retreat threshold
 0–100 **remaining hull percentage**, with0 disabling automatic player retreat.
 E.g. retreat after40% damage means threshold60. Pirates retreat at25% remaining.
 
+### Explicit opening interception configuration
+
+Omitting `scenario` (or passing null) retains generic rules/results exactly.
+Trusted Backend may supply:
+
+```js
+scenario: {
+  type: 'opening', choice: 'run', // or 'fight'
+  playerHullFloor: 25, cargoPolicy: 'boarding_only',
+}
+```
+
+Only this scenario is supported. Validate maxHull100 and initial player hull25–100;
+reject ships below25 (Backend offers noncombat resolution/repair rather than
+silently healing). A ship starting exactly25 boards at tick0. Run starts irreversible
+retreat at tick0 (`reason: 'opening_run'`); fight retains player tactical setup and
+accepted commands. Incoming damage cannot lower Horizon below25. Opening salvos
+affect hull only on both ships, with no weapon cargo loss. Cargo protection still
+trades player accuracy for escape progress; no cargo-hit probability applies here.
+
+At hull25, a surviving pirate boards before escape advancement and terminates with
+`outcome: 'boarded', reason: 'hull_floor'`. The single `boarding` event contains
+actorId/targetId, cargoLost and hullRemaining. Loss is `ceil(initial cargoUnits /4)`
+for run or `ceil(initial cargoUnits /2)` for fight. Pirate destruction in the same
+salvo takes precedence: victory, no boarding, no cargo loss. Escape, pirate escape,
+victory or stalemate keeps all opening cargo. No guaranteed victory is manufactured.
+Horizon cannot be destroyed and crew casualty rules are not applied in this scenario.
+Pirate destruction remains possible.
+
+Opening state includes `scenario` plus frozen `initialCargoUnits`. Opening results
+include `scenario: {type, choice, playerHullFloor, cargoPolicy, initialCargoUnits,
+cargoLostUnits, crewSafe: true}` alongside the existing terminal fields and final
+ships. `cargoLostUnits` is exactly initial units minus final `player.cargoUnits`.
+Economy allocates this aggregate loss across actual commodities and basis once;
+do not add a second boarding deduction to those final units. Result and event
+loss describe the same consequence, not two charges. Terminal steps cannot board
+again or mutate the floor. Generic result shape has no scenario field.
+
+Required encounter copy: “The raider boards disabled freighters. Opening combat
+cannot destroy Horizon or kill crew. Weapon hits damage hull, not cargo. Boarding
+at25 hull takes one quarter of the original load if you run, or half if you fight,
+rounded up. Escape or victory keeps the load.” UI must state this before choice
+and use actual initial units to preview the loss. This module does not render copy.
+
 Commands apply before actions at ticks1–180, max8 accepted commands total.
 `stepBattle` accepts only commands for its next tick; same-tick commands retain
 submission order (last posture wins). Retreat is irreversible. Repeated retreat
@@ -70,7 +114,7 @@ Each shot costs one ammo. Hit chance is bounded5–95%, modified by captain skil
 and exposed retreating targets (+10). Armour and engineer reduce damage, minimum1
 on a hit. Cargo protection reduces player accuracy8, cuts cargo-hit probability
 from20% to5%, and adds2 escape progress/tick. Cargo hits lose a bounded integer
-quantity: `min(remaining cargoUnits, max(1, floor(applied hull damage / 5)))`.
+quantity in generic battles: `min(remaining cargoUnits, max(1, floor(applied hull damage / 5)))`.
 No commodity or money is selected by this resolver; final cargoUnits plus summed
 damage-event cargoLost reconcile the aggregate loss for the settlement adapter.
 Speed differential and captain change escape rate, bounded2–18/tick;
@@ -108,7 +152,7 @@ which cargo units are lost before integration. All example stats are fixtures.
 
 ## Validation
 
-Focused command: `node --test tests/combat/combat.test.js` (no npm install needed).
+Focused command: `node --test tests/combat/*.test.js` (no npm install needed).
 No shared package script changed. Small dependency-free tests are lightweight;
 full builds/suites/browser jobs use the VPS queue. Tests do not establish battle
 visuals, persistent settlement, mobile acceptance or fun/balance acceptance.

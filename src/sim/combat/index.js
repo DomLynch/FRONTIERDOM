@@ -31,6 +31,16 @@ function ship(input) {
   result.hull = integer(input.hull, 1, result.maxHull, 'hull');
   return { ...result, retreating: false, escapeProgress: 0, escaped: false };
 }
+function scenario(config, player) {
+  if (config == null) return null;
+  if (config.type !== 'opening' || !['run', 'fight'].includes(config.choice)
+    || config.playerHullFloor !== 25 || config.cargoPolicy !== 'boarding_only'
+    || player.maxHull !== 100 || player.hull < 25) {
+    throw new TypeError('Invalid opening scenario: requires hull25–100/max100 and boarding-only cargo');
+  }
+  return { type: 'opening', choice: config.choice, playerHullFloor: 25,
+    cargoPolicy: 'boarding_only', initialCargoUnits: player.cargoUnits };
+}
 function emit(state, type, fields = {}) {
   state.events.push({ sequence: state.events.length, tick: state.tick, type, ...fields });
 }
@@ -47,6 +57,7 @@ export function createBattle(input) {
   if (!input || typeof input.protectCargo !== 'boolean') throw new TypeError('Invalid cargo intent');
   const player = ship(input.player);
   const pirate = ship(input.pirate);
+  const opening = scenario(input.scenario, player);
   if (player.id === pirate.id) throw new TypeError('Ship ids must differ');
   const seed = integer(input.seed, 0, 4294967295, 'seed');
   const state = { version: COMBAT_VERSION, seed, tick: 0,
@@ -55,6 +66,11 @@ export function createBattle(input) {
     retreatHullPercent: integer(input.retreatHullPercent, 0, 100, 'retreatHullPercent'),
     commandCount: 0, events: [], result: null };
   emit(state, 'approach', { actorId: pirate.id, targetId: player.id });
+  if (opening) {
+    state.scenario = opening;
+    if (player.hull === opening.playerHullFloor) board(state);
+    else if (opening.choice === 'run') retreat(state, player, 'opening_run');
+  }
   return state;
 }
 
@@ -91,7 +107,8 @@ function attack(state, actor, target, actorPosture, targetPosture, isPlayer) {
   // Simultaneous salvos: calculate both hits before applying either hull loss.
   const damage = Math.max(1, actor.weaponDamage + roll(state, 7) - 3
     - target.armour - Math.floor(target.engineer / 2));
-  const cargoHit = target.cargoUnits > 0 && roll(state, 100) < (!isPlayer && state.protectCargo ? 5 : 20);
+  const cargoHit = !state.scenario && target.cargoUnits > 0
+    && roll(state, 100) < (!isPlayer && state.protectCargo ? 5 : 20);
   emit(state, 'hit', { actorId: actor.id, targetId: target.id });
   return { actor, target, damage, cargoHit };
 }
@@ -99,6 +116,15 @@ function finish(state, outcome, reason) {
   emit(state, 'terminal', { outcome, reason });
   state.result = { version: COMBAT_VERSION, seed: state.seed, outcome, reason, tick: state.tick,
     player: structuredClone(state.player), pirate: structuredClone(state.pirate) };
+  if (state.scenario) state.result.scenario = { ...state.scenario,
+    cargoLostUnits: state.scenario.initialCargoUnits - state.player.cargoUnits, crewSafe: true };
+}
+function board(state) {
+  const cargoLost = Math.ceil(state.scenario.initialCargoUnits / (state.scenario.choice === 'run' ? 4 : 2));
+  state.player.cargoUnits -= cargoLost;
+  emit(state, 'boarding', { actorId: state.pirate.id, targetId: state.player.id,
+    cargoLost, hullRemaining: state.player.hull });
+  finish(state, 'boarded', 'hull_floor');
 }
 
 /** Returns a new serializable state; never reads wall time, playback speed or DB.
@@ -130,7 +156,8 @@ export function stepBattle(previous, commands = []) {
   const shots = [attack(state, player, pirate, state.posture, 'balanced', true),
     attack(state, pirate, player, 'balanced', state.posture, false)].filter(Boolean);
   for (const shot of shots) {
-    const damage = Math.min(shot.target.hull, shot.damage);
+    const floor = state.scenario && shot.target === player ? state.scenario.playerHullFloor : 0;
+    const damage = Math.min(shot.target.hull - floor, shot.damage);
     shot.target.hull -= damage;
     const cargoLost = shot.cargoHit ? Math.min(shot.target.cargoUnits, Math.max(1, Math.floor(damage / 5))) : 0;
     shot.target.cargoUnits -= cargoLost;
@@ -142,6 +169,10 @@ export function stepBattle(previous, commands = []) {
   }
   if (player.hull === 0 || pirate.hull === 0) {
     finish(state, player.hull === 0 ? (pirate.hull === 0 ? 'mutual_destruction' : 'defeat') : 'victory', 'destroyed');
+    return state;
+  }
+  if (state.scenario && player.hull === state.scenario.playerHullFloor) {
+    board(state);
     return state;
   }
   for (const [vessel, pursuer] of [[player, pirate], [pirate, player]]) {
