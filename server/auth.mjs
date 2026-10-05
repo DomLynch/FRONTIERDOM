@@ -30,8 +30,8 @@ export function createAccountAuth({ pool, provider, encryptionKey }) {
     return JSON.parse(Buffer.concat([decipher.update(data.subarray(28)),decipher.final()]).toString('utf8'));
   }
   async function alive(client, identity) {
-    const { rows } = await client.query('select id from auth.sessions where id=$1 and user_id=$2', [identity.sessionId,identity.user.id]);
-    if (!rows[0]) throw denied();
+    const { rows:[row] } = await client.query('select frontierdom.auth_session_alive($1,$2) as alive', [identity.sessionId,identity.user.id]);
+    if (!row?.alive) throw denied();
   }
   async function withUser(token, run) {
     const tokenDigest = hash(token);

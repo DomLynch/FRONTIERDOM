@@ -146,6 +146,27 @@ test('actual pinned SDK exchanges PKCE, verifies JWT/user, stores encrypted toke
   assert.match(cookie,/HttpOnly; SameSite=Lax; Path=\/api\/v1\/auth\/callback; Max-Age=600; Secure/);
 });
 
+test('managed Auth schema denial still permits narrow live-session verification and remote revocation',async()=>{
+  // Hosted postgres cannot grant USAGE on the managed auth schema. Match that
+  // restriction rather than accepting the more permissive local bootstrap.
+  await admin.query('revoke usage on schema auth from frontierdom_backend');
+  try {
+    assert.equal((await pool.query("select has_schema_privilege(current_user,'auth','USAGE') as allowed")).rows[0].allowed,false);
+    await assert.rejects(pool.query('select id from auth.sessions limit 0'),error=>error.code==='42501');
+    const g=await login();
+    assert.equal((await call('auth/session',{cookie:g.cookie})).body.user.id,g.u.id);
+    assert.equal((await pool.query('select frontierdom.auth_session_alive($1,$2) as alive',[g.sid,randomUUID()])).rows[0].alive,false);
+    for(const role of ['anon','authenticated','service_role']) {
+      assert.equal((await admin.query("select has_function_privilege($1,'frontierdom.auth_session_alive(uuid,uuid)','EXECUTE') as allowed",[role])).rows[0].allowed,false);
+    }
+    await admin.query('delete from auth.sessions where id=$1',[g.sid]);
+    assert.equal((await call('auth/session',{cookie:g.cookie})).body.user,null);
+    assert.equal((await pool.query('select frontierdom.auth_session_alive($1,$2) as alive',[g.sid,g.u.id])).rows[0].alive,false);
+  } finally {
+    await admin.query('revoke usage on schema auth from frontierdom_backend');
+  }
+});
+
 test('callback rejects missing/expired/mismatched/replayed verifier and open redirects without company creation',async()=>{
   assert.equal((await call('auth/callback?code=stolen')).headers.get('location'),'/?auth=failed');
   const a=await begin(),b=await begin(),issued=await issue(a);
