@@ -156,6 +156,7 @@ try {
   await page.goto(uiOrigin); await page.waitForSelector('[aria-label="Company overview"]');
   const initial=(await call('state',{cookie:a.cookie})).body.state;
   assert.equal(requests.filter(r=>r.path.endsWith('/session') && r.body).length,1);
+  await page.locator('[data-action="panel"][data-id="market"]').click();
   await page.locator('[data-quantity="medicine"]').fill('1');
   await page.locator('[data-action="quote"][data-id="medicine"]').click(); lose=true;
   await page.locator('[data-action="confirm"]').click(); await page.waitForSelector('[data-action="retry"]:enabled');
