@@ -58,11 +58,8 @@ export function mountUI(container, { api, onState = () => {} }) {
 
   async function connect() {
     await task(async () => {
-      if (sessionReady) await refresh();
-      else {
-        const response = await api.session();
-        accept(response.state); sessionReady = true;
-      }
+      // Inspect intent before any session bootstrap: a missing cookie must not
+      // create a new company while a previous company's outcome is unknown.
       const saved = storage().getItem(pendingKey());
       if (saved) {
         try {
@@ -70,10 +67,16 @@ export function mountUI(container, { api, onState = () => {} }) {
           if (!pending || typeof pending.companyId !== 'string' || typeof pending.commandId !== 'string'
             || typeof pending.quoteId !== 'string' || !Number.isSafeInteger(pending.expectedRevision)) throw new Error('Invalid retry record');
         } catch { pending = { companyId: 'unreadable-record' }; }
-        notice = pending.companyId === state.companyId
-          ? 'A previous request needs confirmation. Retry it before making another trade.'
-          : 'Your browser session now belongs to a different company. The previous company’s request is unresolved.';
+        notice = 'A previous request needs confirmation. Restore its company session or explicitly discard the local retry record.';
       }
+      if (sessionReady) await refresh();
+      else {
+        const response = saved ? await api.state() : await api.session();
+        accept(response.state); sessionReady = true;
+      }
+      if (pending) notice = pending.companyId === state.companyId
+        ? 'A previous request needs confirmation. Retry it before making another trade.'
+        : 'Your browser session now belongs to a different company. The previous company’s request is unresolved.';
       recoveryReady = true;
     });
   }
@@ -114,7 +117,7 @@ export function mountUI(container, { api, onState = () => {} }) {
     const disabled = busy || !!pending || !recoveryReady;
     container.classList.add('fd-ui');
     if (!state) {
-      container.innerHTML = `<section class="fd-loading"><span class="fd-eyebrow">ORBITAL COMMERCE / 01</span><h1>FRONTIERDOM<span>Build your own horizon.</span></h1><p role="status">${busy ? 'Connecting to your company…' : escape(error || 'Your company is ready to connect.')}</p><button data-action="refresh" ${busy ? 'disabled' : ''}>${busy ? 'Connecting…' : 'Retry connection'}</button></section>`;
+      container.innerHTML = `<section class="fd-loading"><span class="fd-eyebrow">ORBITAL COMMERCE / 01</span><h1>FRONTIERDOM<span>Build your own horizon.</span></h1><p role="status">${busy ? 'Connecting to your company…' : escape(error || 'Your company is ready to connect.')}</p>${pending ? `<p>${escape(notice)} Discarding cannot undo or confirm the old trade.</p>` : ''}<button data-action="refresh" ${busy ? 'disabled' : ''}>${busy ? 'Connecting…' : 'Retry connection'}</button>${pending ? `<button class="fd-quiet" data-action="discard" ${busy ? 'disabled' : ''}>Discard retry record & start new company</button>` : ''}</section>`;
       return;
     }
     const used = state.ship.cargo.reduce((sum, item) => sum + item.quantity, 0);
@@ -160,7 +163,11 @@ export function mountUI(container, { api, onState = () => {} }) {
     if (action === 'market') { selectedLocation = id; render(); return; }
     if (action === 'mode') { mode = id; render(); return; }
     if (action === 'refresh') { await connect(); return; }
-    if (action === 'discard') { await task(async () => { clearPending(); notice = 'Old retry record discarded. This company is unchanged.'; }); return; }
+    if (action === 'discard') {
+      await task(async () => { clearPending(); notice = 'Old retry record discarded.'; });
+      if (!state) await connect();
+      return;
+    }
     if (action === 'retry') { await task(sendPending); return; }
     if (pending || !recoveryReady) return;
     await task(async () => {

@@ -29,13 +29,16 @@ try {
     finances: { purchasesPence: 0, salesPence: 0, salesCostBasisPence: 0, travelPence: 0, netCashFlowPence: 0, realizedProfitPence: 0 }, receipts: []
   };
   const quotes = new Map(), commands = new Map(), payloads = [];
-  let loseResponse = false, expiredSession = false;
+  let loseResponse = false, expiredSession = false, missingSession = false, sessionCalls = 0;
   await page.route('http://127.0.0.1:4179/', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><div id="ui"></div>' }));
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.split('/').at(-1);
     const body = route.request().postDataJSON();
     const fulfill = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ apiVersion: 1, ...data }) });
-    if (path === 'session' || path === 'state') return fulfill({ state });
+    if (path === 'session') { sessionCalls++; return fulfill({ state }); }
+    if (path === 'state') return missingSession
+      ? fulfill({ error: { code: 'SESSION_REQUIRED', message: 'Session missing.', retryable: false } }, 401)
+      : fulfill({ state });
     if (path === 'quotes') {
       const { action } = body;
       const quote = { id: crypto.randomUUID(), action, expectedRevision: state.revision, expiresAt: new Date(Date.now() + 60000).toISOString(), debitPence: action.type === 'buy' ? action.quantity * 80000 : action.type === 'travel' ? 35000 : 0, creditPence: action.type === 'sell' ? action.quantity * 100000 : 0 };
@@ -119,8 +122,19 @@ try {
   await page.waitForSelector('.fd-error');
   assert.match(await page.locator('.fd-error').innerText(), /Company session changed/);
   assert.equal(await page.locator('[data-action="quote"]:enabled').count(), 0);
+  const beforeRecoveryCalls = sessionCalls;
+  missingSession = true;
+  await page.evaluate(() => localStorage.setItem('frontierdom.pending.v1', JSON.stringify({ companyId: 'lost-company', commandId: 'unresolved', quoteId: 'unresolved-quote', expectedRevision: 0 })));
+  await page.reload();
+  await page.evaluate(async () => { const { mountUI } = await import('/src/ui/index.js'); const { createApi } = await import('/src/client/api.js'); window.ui = mountUI(document.querySelector('#ui'), { api: createApi() }); });
+  await page.waitForSelector('.fd-loading [data-action="discard"]:enabled');
+  assert.equal(sessionCalls, beforeRecoveryCalls, 'Pending recovery must never create a replacement company');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('frontierdom.pending.v1')).commandId), 'unresolved');
+  await page.locator('[data-action="refresh"]').click();
+  await page.waitForSelector('.fd-loading [data-action="discard"]:enabled');
+  assert.equal(sessionCalls, beforeRecoveryCalls);
   assert.deepEqual(errors, []);
-  console.log('PASS: exact quote, lost response + reload + expired session + identical replay, old snapshot ignored, one charge, travel/sell, company mismatch and mid-session identity guard, 320/390/844/1440 layout; fixture API only.');
+  console.log('PASS: exact quote, lost response + reload + expired session + identical replay, old snapshot ignored, one charge, travel/sell, company mismatch/identity guard, pending+missing cookie never creates company, 320/390/844/1440 layout; fixture API only.');
 } finally {
   await browser?.close(); vite.kill('SIGTERM');
 }
