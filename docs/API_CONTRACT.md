@@ -6,7 +6,7 @@
 
 - Lead: `package.json`, `package-lock.json`, `.gitignore`, `index.html`, `src/main.js`, `src/client/app.js`, `src/client/api.js`, `src/contracts/api.d.ts`, this document.
 - Backend: `server/**`, `supabase/**`, `tests/backend/**`. Implements same-origin `/api/v1/**`; Supabase credentials and privileged operations stay server-side.
-- Economy: `src/sim/economy/**`, `tests/economy/**`. Supplies authoritative pricing/cargo/travel rules; Backend executes them, never reimplements them independently.
+- Economy: `src/sim/economy/**`, `tests/economy/**`. Exports from `src/sim/economy/index.js`: `createInitialState(companyId)`, `quoteAction(state, action)` returning `{ debitPence, creditPence }`, and `applyAction(state, action, { commandId, receiptId, occurredAt })` returning `{ state, receipt }`. Kernel throws errors with contract code/message for rejected actions. Backend executes this pure kernel inside its transaction; quote IDs, expiry, sessions and idempotency remain Backend responsibilities. No independently reimplemented rules.
 - UI: `src/ui/**`. Export `mountUI(container, { api, onState })` returning `{ destroy() }`. Fetch/refresh state through api; call onState after accepted snapshots. No economic mutation in browser.
 - World: `src/world/**`, `public/assets/**`. Export `createWorld(app)` from `src/world/index.js`, returning `{ setState(state), destroy() }`. Only visuals; no balances, travel or damage resolution.
 - Combat: `src/sim/combat/**`, `tests/combat/**`; subsequent milestone.
@@ -21,14 +21,14 @@ All success responses include `apiVersion: 1`. Session/state return `{ apiVersio
 
 ## State
 
-`state = { companyId, revision, locationId, cashPence, ship, crew, markets, routes, receipts }`.
+`state = { companyId, revision, locationId, cashPence, ship, crew, markets, routes, finances, receipts }`.
 
 - IDs are opaque strings except locations `earth` / `eden`; revision is a nonnegative safe integer increasing on every committed command.
 - `ship = { id, name, capacityUnits, cargo: [{ commodityId, quantity, costBasisPence }] }`.
 - `crew = [{ id, name, role }]`; initial roles captain/engineer/trader.
 - `markets = [{ locationId, revision, commodities: [{ id, name, stockUnits, buyUnitPence, sellUnitPence }] }]`. Display prices are indicative; server quotes calculate the exact total, including stock-sensitive pricing. No client price interpolation.
 - `routes = [{ from, to, travelCostPence }]`; cost includes fuel for this first slice, with no separate fuel inventory. Travel resolves immediately server-side; UI animation is presentation.
-- `receipts` is a recent bounded list of committed Receipt objects. Backend retains complete ledger for trip totals, even if older rows are omitted from state.
+- `receipts` is a recent bounded list of committed Receipt objects. Backend retains the complete ledger and cumulative finances even if older rows are omitted from state.
 - Quantities/capacity/stock are whole nonnegative safe integers. Currency is integer pence; all totals must remain safe integers. Cargo sum cannot exceed capacity. Server time and state are authoritative.
 
 ## Quotes and commands
@@ -43,11 +43,13 @@ Backend validates quote ownership/expiry/current market revision and company rev
 
 Idempotency lookup precedes stale-quote/revision checks: the same company + commandId + identical payload returns the stored original response with replayed=true, even after quote expiry. Same ID with a different payload returns IDEMPOTENCY_CONFLICT. Store the receipt/result in the same transaction as the economic changes. An old replay snapshot can be older than current state: UI ignores lower revisions and refreshes GET state. Network failure means unknown outcome; retry the identical command, never invent a new ID until outcome is known.
 
-## Receipts and trip accounting
+## Receipts and cumulative accounting
 
-`receipt = { id, commandId, action, locationBefore, locationAfter, debitPence, creditPence, cashAfterPence, revision, occurredAt, trip }`.
+`receipt = { id, commandId, action, locationBefore, locationAfter, debitPence, creditPence, cashAfterPence, realizedProfitPence, revision, occurredAt }`. receipt.realizedProfitPence is the command delta: zero for purchases; sale proceeds minus allocated cargo cost basis for sells; negative travel cost for travel.
 
-`trip = { id, purchasesPence, salesPence, salesCostBasisPence, travelPence, netCashFlowPence, realizedProfitPence, completed }`. Start a trip on the first buy or departure at Earth; complete it on return to Earth. Purchases/sales/travel accumulate once from ledger; netCashFlowPence = salesPence - purchasesPence - travelPence. Backend tracks weighted-average cargo cost basis in integer pence: a partial sale allocates floor(total basis × sold quantity / held quantity); selling the final units consumes all remaining basis. realizedProfitPence = salesPence - salesCostBasisPence - travelPence. UI shows realized profit/loss, net cash flow and remaining cargo separately. Unsold cargo is not a realized loss. Cost basis updates occur in the same trade transaction.
+`state.finances = { purchasesPence, salesPence, salesCostBasisPence, travelPence, netCashFlowPence, realizedProfitPence }`. Initialize all at zero; update cumulatively and exactly once. netCashFlowPence = salesPence - purchasesPence - travelPence; realizedProfitPence = salesPence - salesCostBasisPence - travelPence. Initial cash is excluded from these flow totals. No recurring crew wages in this bounded first slice; a wage rule requires an explicit later contract extension.
+
+Backend tracks weighted-average cargo cost basis in integer pence: a partial sale allocates floor(total basis × sold quantity / held quantity); selling the final units consumes all remaining basis. UI shows realized profit/loss, net cash flow and remaining cargo separately. Unsold cargo is not a realized loss. Cost basis updates occur in the same trade transaction. Trip completion summaries are deferred: cumulative totals include return cargo sales at Earth without ambiguous closure timing.
 
 ## Errors
 
@@ -64,4 +66,4 @@ Economic/validation errors are retryable=false: change intent or refresh/requote
 
 ## Integration checks
 
-Real backend checks: isolated guest ownership; duplicate and conflicting command IDs; concurrent spend/stock/capacity; expired/stale quotes; rejected-command rollback; exact trip arithmetic; state recovery after response loss and browser reload. UI disables duplicate submission, preserves unknown-outcome requests, and handles offline/conflicts explicitly. World consumes snapshots without modifying them. Lead tests a complete Earth–Eden–Earth path against the real API. Build/package/browser/device evidence remain separate; Deploy receives reviewed candidate identity and rollback instructions.
+Real backend checks: isolated guest ownership; duplicate and conflicting command IDs; concurrent spend/stock/capacity; expired/stale quotes; rejected-command rollback; exact cumulative/cost-basis arithmetic; state recovery after response loss and browser reload. UI disables duplicate submission, preserves unknown-outcome requests, and handles offline/conflicts explicitly. World consumes snapshots without modifying them. Lead tests a complete Earth–Eden–Earth path against the real API. Build/package/browser/device evidence remain separate; Deploy receives reviewed candidate identity and rollback instructions.
