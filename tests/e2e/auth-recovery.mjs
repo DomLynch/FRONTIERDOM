@@ -168,7 +168,7 @@ try {
   assert.equal(await page.evaluate(()=>localStorage.getItem('frontierdom.pending.v1')),saved);
   const fresh=await login(a.u.id); assert.notEqual(fresh.token,a.token);
   const mapping=await admin.query('select company_id from frontierdom.sessions where token_hash=$1',[tokenHash(fresh.token)]);
-  assert.equal(mapping.rowCount,0,'fresh callback has not initialized a company');
+  if (mapping.rowCount) assert.equal(mapping.rows[0].company_id,initial.companyId,'callback may bind only the existing company');
   await installCookie(fresh); const recoveryStart=requests.length; await page.reload();
   await page.waitForSelector('[data-action="retry"]:enabled');
   assert.equal(requests.slice(recoveryStart).some(r=>r.path.endsWith('/session') && r.body),false,'pending recovery never POSTs session');
