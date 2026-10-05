@@ -225,7 +225,11 @@ export function createWorld(app) {
       if (disposed) return;
       // The accepted UI state/session establishes the company before projection.
       if (companyId && companyId !== stateCompany) return;
+      const wasActive = battle.active;
       battle.accept(encounter, companyId, reducedMotion || document.hidden || lost);
+      // A null projection follows ordinary setState travel, including every sync.
+      // Preserve that crossing unless an actual battle is entered or cleared.
+      if (!wasActive && !battle.active) return;
       transit.cancel(); crossing.enabled = false;
       if (!battle.active) { ship.setLocalPosition(0, 0, -3); ship.setLocalEulerAngles(0, -30, 0); }
       showLocation(location); resize();
