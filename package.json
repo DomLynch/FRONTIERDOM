@@ -12,7 +12,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "test:client": "node --test tests/client/*.test.js",
     "test:e2e": "playwright test --config tests/e2e/playwright.config.js",
-    "test:economy": "node --test tests/economy/*.test.js"
+    "test:economy": "node --test tests/economy/*.test.js",
+    "test:ui": "node --test src/ui/commands.test.js"
   },
   "dependencies": {
     "playcanvas": "2.23.0",
