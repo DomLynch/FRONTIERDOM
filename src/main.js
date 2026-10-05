@@ -8,7 +8,11 @@ let engine, world, ui;
 try {
   engine = createApp(document.querySelector('#scene'));
   world = createWorld(engine.app);
-  ui = mountUI(container, { api: createApi(), onState: state => world.setState(state) });
+  ui = mountUI(container, {
+    api: createApi(), onState: state => world.setState(state),
+    // Public project origin only; provider tokens and keys remain server-side.
+    googleAuthOrigin: 'https://eyfojjzajbfliuokaplx.supabase.co'
+  });
 } catch (error) {
   // DOM error copy is text-only; server or browser messages never become markup.
   container.replaceChildren();
