@@ -18,7 +18,13 @@ export interface StateResponse { apiVersion: 1; state: State }
 export interface QuoteResponse { apiVersion: 1; quote: Quote }
 export interface CommandResponse extends StateResponse { commandId: string; receipt: Receipt; replayed: boolean }
 export interface ErrorResponse { apiVersion: 1; error: { code: string; message: string; retryable: boolean } }
+export interface AuthUser { id: string; displayName: string }
+export interface AuthSessionResponse { apiVersion: 1; user: AuthUser | null; provider: 'google' }
+export interface GoogleSignInResponse { apiVersion: 1; url: string }
 export interface Api {
+  authSession(): Promise<AuthSessionResponse>;
+  signInGoogle(): Promise<GoogleSignInResponse>;
+  signOut(): Promise<AuthSessionResponse>;
   session(): Promise<StateResponse>;
   state(): Promise<StateResponse>;
   quote(action: Action): Promise<QuoteResponse>;

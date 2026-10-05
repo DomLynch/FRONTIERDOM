@@ -13,6 +13,26 @@
 - Deploy: `scripts/release/**`, deployment manifests/receipts. Vite emits `dist/`; serve client and proxy `/api/` under one HTTPS origin. No secrets in `VITE_*`.
 - Auditor: independent review receipts. Other lanes do not edit Lead-owned files or package/lock; request dependency changes through Strategy.
 
+## Google login extension — owner decision 5 October 2026
+
+Supabase and Google login now form the requested production release. This supersedes the guest-only production session behavior below. Backend confirmed this shared interface; the private trading schema and atomic quote/command rules remain authoritative.
+
+| Method/path under `/api/v1/` | Response/behavior |
+| --- | --- |
+| GET `auth/session` | `{ apiVersion: 1, user: null \| { id, displayName }, provider: 'google' }`; null means signed out. |
+| POST `auth/google` with `{}` | `{ apiVersion: 1, url }`; server-generated HTTPS Supabase OAuth authorization URL using PKCE. Browser navigates at top level. |
+| GET `auth/callback` | Server exchanges the code; sets the opaque production session cookie; redirects only to `/`, `/?auth=cancelled`, or `/?auth=failed`. Never echo provider error text, codes or tokens. |
+| POST `auth/logout` with `{}` | `{ apiVersion: 1, user: null, provider: 'google' }`; revoke/clear the current browser account session. |
+| POST `session` with `{}` | Resume or initialize exactly one persisted company for the verified Supabase user; no production guest fallback. |
+
+Production callback is exactly `https://frontierdom.com/api/v1/auth/callback`. Supabase's Google provider callback is a distinct project-specific URL configured in Google Cloud. Exact redirect allow-lists, no wildcard origins. Auth responses and redirects use private/no-store caching; proxy logs must exclude callback query credentials.
+
+Backend verifies identity and session validity; client-supplied user IDs, metadata and balances cannot confer ownership. Token/refresh/PKCE values remain encrypted server-side with an external encryption key; the browser receives no Supabase secret or auth tokens. Use a per-request official SDK client/storage context and restricted private-schema database role. Concurrent first logins must produce one company per user; returning login/reload restores that same company. Guest mode is explicitly selected only for nonproduction isolated tests.
+
+UI uses `authSession()`, `signInGoogle()`, and `signOut()` on the existing same-origin API client. UI retains the exact pending command/company through OAuth navigation, expiry, logout and account changes. It must resolve or preserve the original pending operation; another account cannot replay it, silently erase it or substitute a new company. Display names are untrusted text. Show readable cancellation/failure/retry and original-account recovery.
+
+New acceptance covers verified Google login, logout/revocation, code/state replay rejection, account/company isolation, return login/reload, pending-command recovery, and a real authenticated trade. Isolated auth-provider fixtures do not prove hosted Google acceptance. Freeze/review/package the changed runtime before publication; preserve the old guest package as prior trading evidence.
+
 ## Session and transport
 
 JSON over same-origin HTTPS. POST `/api/v1/session` (empty object) creates or resumes a guest account/company using a server-issued opaque cookie. Cookie is HttpOnly, Secure in production, SameSite=Lax, Path=/; persist for repeat visits. Reject cross-origin mutation requests by validating Origin against the configured site origin; no permissive credentialed CORS. Never accept owner identity in command bodies. Backend may map sessions to Supabase internally; browser gets no service key. Guest persistence is browser-specific, not cross-device recovery. GET `/api/v1/state` resumes the authenticated company. Missing/expired sessions return 401; do not silently create a new company on command failure. No reset endpoint in this slice. If an unknown command is pending, an expired/missing session must not silently create a new company; UI presents recovery failure and preserves the original company/command record.

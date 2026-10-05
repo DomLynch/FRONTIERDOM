@@ -8,6 +8,8 @@ An HTTPS mobile browser game at frontierdom.com: start with £25,000, one freigh
 
 ## Implementation choice
 
+Owner update, 5 October: use a dedicated Supabase project and seamless Google sign-in, managed by Lead. Backend owns verified persistent account/company ownership and server-side sessions; UI owns login/logout/recovery. The accepted guest-only trading package remains preserved evidence. Final publication requires an auth-enabled candidate with hosted provider/account checks, independent review and a new immutable package. Organisation selection and actual project-cost confirmation precede provisioning; no other game's project/config is reused.
+
 Use one code-first PlayCanvas Engine client in Git, with DOM trading UI and a same-origin authoritative API. Waiting for Editor MCP would block usable gameplay without adding a required first-loop capability. The existing blank Editor project remains an authoring resource; do not create a competing client or claim it was exported. The owner withdrew the unrelated Three.js combat handoff; none of it enters this release.
 
 ## Owners and sequence

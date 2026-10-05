@@ -12,7 +12,7 @@ Evidence checked 5 October: eight focused client checks; 29 real PostgreSQL chec
 
 HTTPS certificate for apex/www expires3January2027. Deploy verified existing twice-daily Certbot timer, scoped FRONTIERDOM Nginx renewal hook and successful renewal dry run. Release template redirects HTTPSwww to apex to match trusted API Origin. Public host remains deliberate503.
 
-Production database choice remains pending explicit owner decision (existing dedicated VPS PostgreSQL versus new dedicated Supabase organization/cost). No production DB created; no other-game database may be used. Temporary isolated PostgreSQL tests were used. Runtime server/server.mjs uses restricted DATABASE_URL, exact SITE_ORIGIN, production cookies and proxy trust; Deploy owns activation.
+Owner chose Supabase and Google sign-in on 5 October at about14:42UTC, with Lead managing deployment. Connected Supabase integration verified; available organisation “Global-Digital-Assets's Org” is Free and contains Frankendom Origins. Dedicated FRONTIERDOM project organisation selection/cost confirmation and Google OAuth setup remain pending; no production resource created and no other-game database/config may be reused. Temporary isolated PostgreSQL tests were used. Runtime server/server.mjs uses restricted DATABASE_URL, exact SITE_ORIGIN, production cookies and proxy trust; Deploy owns activation.
 
 ## Editor automation pilot
 
@@ -20,6 +20,6 @@ Independently accepted 5 October: official MCP authored project1613265/scene2612
 
 ## Next
 
-After explicit production DB choice, Backend provisions only dedicated resources/recovery readiness and Deploy activates the accepted immutable candidate. Verify HTTPS canonical origin, served digest, real session/trade/reload and rollback. Physical-phone acceptance remains distinct. No paid compute, Claude/hook changes or other-game mutations.
+Backend implements verified Google account ownership/session lifecycle in server/**, supabase/**, tests/backend/**. UI implements login/recovery/logout in src/ui/** and has temporary ownership of auth additions to src/client/api.js. Lead provisions the dedicated Supabase project after organisation/cost confirmation, owns shared contracts/package/lock, and coordinates Google provider configuration. The guest-only4059999 package remains accepted evidence for trading but is superseded as the final requested release; freeze, test and independently review a new auth-enabled candidate before Deploy activation. Verify HTTPS canonical origin, served digest, real session/trade/reload and rollback. Physical-phone acceptance remains distinct. No paid compute, Claude/hook changes or other-game mutations.
 
 [Earlier setup receipts](docs/history/INITIAL_SETUP_STATE.md). Editor project1613265/scene2612405 now contains the separate docking pilot; it is not the accepted live-release client.
