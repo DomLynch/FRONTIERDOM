@@ -12,7 +12,7 @@ const server=spawn(process.execPath,['tests/e2e/preview-server.mjs'],{env:{...pr
 let browser;const errors=[];
 try {
  for(let i=0;i<100;i++){try{if((await fetch(`http://127.0.0.1:${port}`)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
- browser=await chromium.launch({headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+ browser=await chromium.launch({headless:true,...(process.env.WORLD_CHROMIUM_EXECUTABLE?{executablePath:process.env.WORLD_CHROMIUM_EXECUTABLE}:{}),args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  for(const [name,viewport] of [['portrait',{width:390,height:844}],['landscape',{width:1280,height:720}]]){
   for(const locationId of ['earth','eden']){
    const context=await browser.newContext({viewport,deviceScaleFactor:1,reducedMotion:'reduce'});
