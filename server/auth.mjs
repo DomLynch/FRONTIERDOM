@@ -105,6 +105,13 @@ export function createAccountAuth({ pool, provider, encryptionKey }) {
         await client.query(`insert into frontierdom.account_sessions(token_hash,auth_user_id,auth_session_id,sealed_storage,expires_at)
           values($1,$2,$3,$4,clock_timestamp()+interval '30 days')`,
         [digest,identity.user.id,identity.sessionId,seal(storage,`account:${digest}`)]);
+        // Pending-command recovery starts with GET state after fresh sign-in.
+        // Bind only this verified user's existing company; creation remains an
+        // explicit POST session operation and never happens during recovery.
+        await client.query(`insert into frontierdom.sessions(token_hash,company_id,expires_at)
+          select a.token_hash,c.id,a.expires_at from frontierdom.account_sessions a
+          join frontierdom.companies c on c.auth_user_id=a.auth_user_id
+          where a.token_hash=$1`,[digest]);
       });
       return { token:accountToken,maxAge:MAX_AGE,redirect:'/' };
     },

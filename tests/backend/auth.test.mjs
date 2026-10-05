@@ -242,9 +242,23 @@ test('lost A response plus session switch returns ACCOUNT_CHANGED before replay/
   assert.equal(raced.status,409);assert.equal(raced.body.error.code,'ACCOUNT_CHANGED');
   assert.deepEqual((await call('state',{cookie:b.cookie})).body.state,beforeB);
   assert.equal((await call('commands',{cookie:b.cookie,body:committed.input})).status,400);
-  const again=await login(a.u.id);assert.equal((await company(again)).companyId,initial.companyId);
+  const newB=await login();
+  assert.equal((await call('state',{cookie:newB.cookie})).status,401);
+  assert.equal((await admin.query('select count(*)::int as count from frontierdom.companies where auth_user_id=$1',[newB.u.id])).rows[0].count,0);
+  assert.equal((await call('auth/logout',{cookie:a.cookie,body:{}})).status,200);
+  const again=await login(a.u.id);
+  // Recovery cannot initialize a company: the UI goes straight to GET state
+  // after the fresh callback, then replays the original bytes and company ID.
+  const restored=await call('state',{cookie:again.cookie});
+  assert.equal(restored.status,200,JSON.stringify(restored.body));
+  assert.deepEqual(restored.body.state,committed.body.state);
   const recovered=await call('commands',{cookie:again.cookie,body:committed.input,headers:{'X-Frontierdom-Company-Id':initial.companyId}});
+  assert.equal(recovered.status,200);
   assert.deepEqual(recovered.body,{...committed.body,replayed:true});
+  assert.deepEqual((await call('state',{cookie:b.cookie})).body.state,beforeB);
+  const records=await admin.query('select count(*)::int as count from frontierdom.commands where company_id=$1 and command_id=$2',[initial.companyId,committed.input.commandId]);
+  assert.equal(records.rows[0].count,1);
+  assert.equal((await admin.query('select count(*)::int as count from frontierdom.companies where auth_user_id=$1',[a.u.id])).rows[0].count,1);
 });
 
 test('new Auth service recovers encrypted account session and logout waits for in-flight economic commit',async()=>{
