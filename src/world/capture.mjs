@@ -3,8 +3,22 @@
 import { chromium } from '@playwright/test';
 import { createInitialState, quoteAction, applyAction } from '../sim/economy/index.js';
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import net from 'node:net';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+const require=createRequire(import.meta.url);
+const {PNG}=require(path.join(path.dirname(require.resolve('playwright-core/package.json')),'lib/utilsBundle.js'));
+const haloRegion={x:0,y:140,width:320,height:260};
+function haloDifference(buffer,reference){
+ const actual=PNG.sync.read(buffer);let changed=0;
+ for(let y=haloRegion.y;y<haloRegion.y+haloRegion.height;y++)for(let x=haloRegion.x;x<haloRegion.x+haloRegion.width;x++){
+  const i=(y*actual.width+x)*4;
+  if(Math.max(...[0,1,2].map(c=>Math.abs(actual.data[i+c]-reference.data[i+c])))>4)changed++;
+ }
+ return changed;
+}
+const phaseObservations=[];
 const outputs = process.env.WORLD_CAPTURE_OUTPUT || '/tmp/frontierdom-world-captures';
 await mkdir(outputs, {recursive:true});
 const reservation=net.createServer();await new Promise(r=>reservation.listen(0,'127.0.0.1',r));const port=reservation.address().port;await new Promise(r=>reservation.close(r));
@@ -54,10 +68,27 @@ try {
  await page.locator('button[data-action="panel"][data-id="route"]').click();
  await page.locator('button[data-action="travel"]').click();
  await page.locator('button[data-action="confirm"]').click();
- await page.waitForTimeout(100);await page.screenshot({path:`${outputs}/transit-confirmed-eden.png`});
- await page.waitForTimeout(18000);await page.screenshot({path:`${outputs}/transit-settled-eden.png`});
+ const reference=PNG.sync.read(await readFile(`${outputs}/eden-landscape-ui.png`));
+ await page.waitForTimeout(100);const confirmed=await page.screenshot({path:`${outputs}/transit-confirmed-eden.png`});
+ const confirmedPixels=haloDifference(confirmed,reference);
+ if(confirmedPixels<100)throw new Error(`Expected visible crossing halo; changed pixels=${confirmedPixels}`);
+ phaseObservations.push({phase:'confirmed',changedPixels:confirmedPixels});
+ // Observe the rendered background where the expanding halo passes; stars may
+ // affect a few pixels. This reads actual screenshots, not a timer/hidden phase.
+ const deadline=Date.now()+30000;let quietFrames=0,settled;
+ while(Date.now()<deadline){
+  await page.waitForTimeout(500);const buffer=await page.screenshot();const changedPixels=haloDifference(buffer,reference);
+  phaseObservations.push({phase:'waiting-for-visible-halo-absence',changedPixels});
+  quietFrames=changedPixels<100?quietFrames+1:0;
+  if(quietFrames===2){settled=buffer;break;}
+ }
+ if(!settled)throw new Error(`Crossing halo did not visibly settle within 30s: ${JSON.stringify(phaseObservations)}`);
+ await writeFile(`${outputs}/transit-settled-eden.png`,settled);
  await page.reload({waitUntil:'networkidle'});await page.waitForTimeout(400);await page.screenshot({path:`${outputs}/transit-reloaded-eden.png`});
+ const reloadPixels=haloDifference(await page.screenshot(),reference);
+ phaseObservations.push({phase:'reloaded-no-halo',changedPixels:reloadPixels});
+ if(reloadPixels>=100)throw new Error(`Reload displayed crossing halo: ${reloadPixels}`);
  await context.close();
  if(errors.length)throw new Error(errors.join('\n'));
- await writeFile(`${outputs}/receipt.json`,JSON.stringify({entryPoint:'built candidate src/main.js',engine:'2.23.0',snapshots:'test-only intercepted authoritative-shape fixtures; no live API/gameplay claim',viewports:[[390,844],[1280,720]],reducedMotion:'reduce for composed frames; no-preference for transit frames',pageErrors:errors,transit:'fixture transport through real UI quote/command and accepted state; initial/crossing/settled/reloaded frames retained'},null,2));
+ await writeFile(`${outputs}/receipt.json`,JSON.stringify({entryPoint:'built candidate src/main.js',engine:'2.23.0',snapshots:'test-only intercepted authoritative-shape fixtures; no live API/gameplay claim',viewports:[[390,844],[1280,720]],reducedMotion:'reduce for composed frames; no-preference for transit frames',pageErrors:errors,visiblePhaseCheck:{region:haloRegion,threshold:100,channelTolerance:4,observations:phaseObservations},transit:'fixture transport through real UI quote/command and accepted state; initial/crossing/settled/reloaded frames retained'},null,2));
 }finally{await browser?.close();server.kill('SIGTERM');}
