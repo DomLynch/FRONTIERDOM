@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#090f1b">
+  <title>FRONTIERDOM</title>
+  <style>
+    html,body{margin:0;width:100%;height:100%;background:#090f1b;color:#edf2fa;font-family:system-ui,sans-serif}
+    #scene{position:fixed;inset:0;width:100%;height:100%;display:block}
+    #ui{position:relative;z-index:1;min-height:100%;box-sizing:border-box;padding:24px}
+    #boot-status{max-width:32rem;line-height:1.6}
+  </style>
+</head>
+<body>
+  <canvas id="scene" aria-label="Ship and station scene"></canvas>
+  <main id="ui"><h1>FRONTIERDOM</h1><p id="boot-status" role="status">Connecting to your company…</p></main>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
