@@ -11,6 +11,14 @@ generation, reward application, commodity allocation or persistent state writes.
 `resolveBattle(input, orderedCommands = [])` runs the same stepper to termination.
 Exports: `COMBAT_VERSION = 1`, `TICK_SECONDS = 1`, `MAX_TICKS = 180`, `MAX_COMMANDS = 8`.
 
+There are no dependencies or async operations. At most8 events/tick plus bounded
+setup/commands/terminal events yields a conservative full-stream limit of2048
+events for this version. Fields have fixed keys, IDs at most80 UTF-16 code units,
+and bounded integer values. Backend should bound HTTP continuation batches and
+stored/returned event streams; client snapshots/events are never accepted as
+authoritative resolver input. Shared `battle_advance` ticks/fees/identity/retry
+validation belongs to its transport adapter, not this pure module.
+
 ```js
 const input = {
   seed: 42, posture: 'balanced', protectCargo: true, retreatHullPercent: 40,

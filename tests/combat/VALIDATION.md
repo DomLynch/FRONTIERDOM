@@ -11,6 +11,11 @@ Victory/escape retains cargo. Result scenario reports initialCargoUnits,
 cargoLostUnits and crewSafe; final ship cargo already includes that one loss.
 Generic behavior and result shape remain unchanged when scenario is omitted/null.
 
+Reviewed against canonical `docs/EXPEDITION_CONTRACT.md` (Lead,17:07UTC):
+compatible with server-frozen inputs, next-tick commands and normalized ammo;
+no added economic charge. Conservative event-count ceiling2048 documented for
+Backend response/storage sizing. No transport validation or settlement implemented.
+
 `node --test tests/combat/*.test.js`: exit0,18/18 (11 generic +7 opening), ~0.20s,
 Node v25.8.1. Includes opening1/2/5/instant equality, terminal replay/no repeated
 floor or boarding mutation, exact ceil losses, zero/tiny/full bounded cargo,
