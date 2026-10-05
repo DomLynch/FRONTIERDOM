@@ -15,5 +15,3 @@ Combat8b9ba6f actual18focused checks accepted interface/nonlethal seeded opening
 ## Constraints and remaining acceptance
 
 Physical iPhone/Safari and unassisted ownervoyage acceptance OPEN; no Editor export claimed. Prior twoliveAuthsessions alone do not prove old-cookie revocation; scopedactualSDKPG revocation is separate. Populatedledger/Auth/offhost disasterrecovery unproven. ExistingEden emptycargo/cashbelowfare recovery unresolved; no reset/loan/fakereward. Preserve exactpending company+command through login/accountswitch. Lead coordinates sevenexistingchats; Auditor reviews; Deploy activates. Fifteenminuteheartbeat quietwhilehealthy/unchanged. Heavyjobs existingVPS3slots/5threads/40GBreserve; actualSafari/iPhone local.
-
-[Preserved initial trading foundation](docs/history/TRADING_FOUNDATION_77948CC.md).
