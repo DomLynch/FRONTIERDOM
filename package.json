@@ -13,7 +13,10 @@
     "test:client": "node --test tests/client/*.test.js",
     "test:e2e": "playwright test --config tests/e2e/playwright.config.js",
     "test:economy": "node --test tests/economy/*.test.js",
-    "test:ui": "node --test src/ui/commands.test.js"
+    "test:ui": "node --test src/ui/commands.test.js",
+    "start": "node server/server.mjs",
+    "test:backend": "bash tests/backend/run-postgres.sh",
+    "test": "npm run test:client && npm run test:ui && npm run test:economy"
   },
   "dependencies": {
     "playcanvas": "2.23.0",
