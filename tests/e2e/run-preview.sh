@@ -3,8 +3,18 @@ set -euo pipefail
 case "$PWD" in /srv/dev-jobs/*/src) ;; *) echo 'Run only inside an isolated queued VPS source folder.' >&2; exit 1;; esac
 : "${DATABASE_URL:?Use Backend isolated PostgreSQL helper first}"
 mkdir -p artifacts/e2e
-export PORT=3097 FRONTIERDOM_PREVIEW_PORT=4197
-export SITE_ORIGIN=http://127.0.0.1:4197 FRONTIERDOM_TEST_URL=http://127.0.0.1:4197
+# Avoid colliding with other queue lanes or live services. Ask the OS for ports.
+read -r PORT FRONTIERDOM_PREVIEW_PORT < <(node --input-type=module <<'JS'
+import net from 'node:net';
+const servers = [net.createServer(), net.createServer()];
+await Promise.all(servers.map(server => new Promise(resolve => server.listen(0, '127.0.0.1', resolve))));
+console.log(servers.map(server => server.address().port).join(' '));
+await Promise.all(servers.map(server => new Promise(resolve => server.close(resolve))));
+JS
+)
+export PORT FRONTIERDOM_PREVIEW_PORT
+export SITE_ORIGIN="http://127.0.0.1:$FRONTIERDOM_PREVIEW_PORT"
+export FRONTIERDOM_TEST_URL="$SITE_ORIGIN"
 export NODE_ENV=development TRUST_PROXY=0
 # Production HTTPS/Secure-cookie and packaging checks remain separate acceptance gates.
 node server/server.mjs > artifacts/e2e/api.log 2>&1 &
