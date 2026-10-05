@@ -56,7 +56,7 @@ test('visible trade journey, profit receipt and recovery of a lost command respo
   expect(completed.finances.netCashFlowPence).toBe(259350);
   expect(completed.ship.cargo).toEqual([]);
   await expect(page.locator('[aria-label="Company overview"]')).toContainText('£27,593.50');
-  await page.locator('[data-action="panel"][data-id="ledger"]').click();
+  await page.locator('.fd-nav [data-action="panel"][data-id="ledger"]').click();
   await expect(page.locator('[aria-label="Voyage ledger"]')).toContainText('£2,593.50');
   await page.screenshot({ path: testInfo.outputPath('earth-profit.png'), fullPage: true });
   await page.reload();
