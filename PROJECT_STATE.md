@@ -14,8 +14,12 @@ HTTPS certificate for apex/www expires3January2027. Deploy verified existing twi
 
 Production database choice remains pending explicit owner decision (existing dedicated VPS PostgreSQL versus new dedicated Supabase organization/cost). No production DB created; no other-game database may be used. Temporary isolated PostgreSQL tests were used. Runtime server/server.mjs uses restricted DATABASE_URL, exact SITE_ORIGIN, production cookies and proxy trust; Deploy owns activation.
 
+## Editor automation pilot
+
+Independently accepted 5 October: official MCP authored project1613265/scene2612405, exported build74038, and a normalized scene adapter ran inside the existing client/Application/UI/API. World59ba112 + UI0ae8861; normalized SHA256 `f834cfc5dd22d5ea39e5cf8a513f9a421bc31266fe3fd381b93ad721d9eb73dd`. VPS `editor-seam-job-cache-fit-35b427eb8d7d` passed build and focused real-PostgreSQL/browser checks: buy/travel, Earth/Eden portrait/landscape, full ship/gateway framing, one app/camera and two clean remounts. Auditor inspected exact inputs, runtime receipts and screenshots. Experimental artifacts remain on isolated lane branches; the accepted release/runtime is unchanged. [Evidence and limits](docs/history/EDITOR_PILOT.md).
+
 ## Next
 
 After explicit production DB choice, Backend provisions only dedicated resources/recovery readiness and Deploy activates the accepted immutable candidate. Verify HTTPS canonical origin, served digest, real session/trade/reload and rollback. Physical-phone acceptance remains distinct. No paid compute, Claude/hook changes or other-game mutations.
 
-[Earlier setup receipts](docs/history/INITIAL_SETUP_STATE.md). Editor project1613265/scene2612405 is an optional blank authoring resource, not this client's export.
+[Earlier setup receipts](docs/history/INITIAL_SETUP_STATE.md). Editor project1613265/scene2612405 now contains the separate docking pilot; it is not the accepted live-release client.
