@@ -11,9 +11,9 @@ Keep simulation independent of rendering. Battle playback and instant resolution
 
 ## Ownership
 
-Strategy: scope and acceptance, requested `gpt-6-astra` / high.
+Strategy: product scope/experience consultant, requested `gpt-6-astra` / high.
 Other developer chats: requested `gpt-6.1-sol` / medium.
-Lead owns integration, package/lock, shared state contracts and publication decisions. Other lanes edit only confirmed file boundaries on isolated branches/worktrees. One designated owner controls the connected PlayCanvas Editor scene; its MCP acts on whichever project is open. Confirm the project read-only and create a checkpoint before substantial Editor changes.
+Lead owns developer coordination, end-to-end delivery, integration, package/lock, shared state contracts and release acceptance. Owner authorizes Lead to message existing FRONTIERDOM developer chats and coordinate their assigned work; Deploy performs live activation after accepted candidate evidence. Owner-requested Lead progress heartbeat checks the seven developer lanes every15minutes, stays quiet during healthy/unchanged work and overrides older no-timer onboarding notes. Other lanes edit only confirmed file boundaries on isolated branches/worktrees. One designated owner controls the connected PlayCanvas Editor scene; its MCP acts on whichever project is open. Confirm the project read-only and create a checkpoint before substantial Editor changes.
 
 Auditor owns independent code-quality/correctness and milestone review; Deploy owns packaging/hosting/rollback. Combat owns seeded tactical calculations, damage/ammo/targeting/retreat, balance and battle events/results. Economy owns trading/progression/travel/encounter rules. Backend owns Supabase/Auth/Postgres, persistence and trusted atomic command/settlement execution. Keep these separate; Lead settles shared contracts. Backend validates authority and applies economic/battle consequences exactly once; clients never submit authoritative balances or victory rewards. Read the Supabase skill before Supabase work. Use dedicated FRONTIERDOM resources; do not reuse another game's database.
 
