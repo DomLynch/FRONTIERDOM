@@ -1,4 +1,4 @@
-import { fail, integer, safe, add, validateState, removeCargo, arrive, finishCommand } from './rules.js';
+import { fail, integer, safe, add, validateState, removeCargo, arrive, finishCommand, allocatedBasis, signed } from './rules.js';
 
 const TYPES = ['enroll_expedition', 'encounter_choice', 'repair', 'buy_upgrade', 'secure_relay'];
 const STATUS = ['unused', 'pending', 'resolved', 'passed_empty'];
@@ -115,8 +115,11 @@ function evaluate(state, action) {
     }
     debitPence = action.points * 500;
   } else if (action.type === 'buy_upgrade') {
-    if (action.id !== 'cargo-bracing') fail('NOT_FOUND', 'Unknown upgrade.');
-    if (!completed(state) || state.locationId !== 'earth' || e.upgrades.includes(action.id)) {
+    if (typeof action.upgradeId !== 'string' || Object.hasOwn(action, 'id')) {
+      fail('INVALID_REQUEST', 'Use the exact upgradeId field.');
+    }
+    if (action.upgradeId !== 'cargo-bracing') fail('NOT_FOUND', 'Unknown upgrade.');
+    if (!completed(state) || state.locationId !== 'earth' || e.upgrades.includes(action.upgradeId)) {
       fail('INVALID_REQUEST', 'Cargo bracing is not available.');
     }
     debitPence = 150000;
@@ -135,6 +138,33 @@ function evaluate(state, action) {
 }
 export function quoteExpeditionAction(state, action) {
   return evaluate(migrateExpeditionState(state), action);
+}
+// Backend projects these trusted quote disclosures; no separate cost-basis formula.
+export function describeExpeditionAction(state, action) {
+  state = migrateExpeditionState(state);
+  const quote = evaluate(state, action);
+  const selection = action.type === 'encounter_choice' && action.choice === 'drop'
+    ? action.cargoSelection : action.type === 'secure_relay'
+      ? [{ commodityId: 'medicine', quantity: 2 }] : [];
+  const cargoRemoved = selection.map(({ commodityId, quantity }) => ({ commodityId, quantity,
+    costBasisPence: allocatedBasis(state.ship.cargo.find(c => c.commodityId === commodityId), quantity) }));
+  const cargoWriteOffBasisPence = cargoRemoved.reduce((sum, cargo) => add(sum, cargo.costBasisPence), 0);
+  const capitalSpendPence = action.type === 'buy_upgrade' ? quote.debitPence : 0;
+  const operatingExpensePence = action.type === 'buy_upgrade' ? 0 : quote.debitPence;
+  return { ...quote,
+    accounting: { operatingExpensePence, cargoWriteOffBasisPence, capitalSpendPence,
+      realizedProfitPence: signed(-BigInt(operatingExpensePence) - BigInt(cargoWriteOffBasisPence)) },
+    consequences: {
+      cargoRemoved,
+      hullAfter: state.expedition.shipCondition.hull + (action.type === 'repair' ? action.points : 0),
+      capacityAfter: action.type === 'buy_upgrade' ? 50 : state.ship.capacityUnits,
+      locationAfter: action.type === 'encounter_choice' && ['pay', 'drop'].includes(action.choice)
+        ? 'earth' : state.locationId,
+      battleRequired: action.type === 'encounter_choice' && ['run', 'fight'].includes(action.choice),
+      ...(action.type === 'encounter_choice' ? { encounterId: action.encounterId } : {}),
+      ...(action.type === 'secure_relay' ? { relayStatusAfter: 'secured', futureReturnFarePence: 15000 } : {}),
+    },
+  };
 }
 function settleArrival(state) {
   state.expedition.pendingJourney = null;

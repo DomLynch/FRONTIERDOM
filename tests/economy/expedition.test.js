@@ -58,7 +58,7 @@ test('drop consumes actual selected basis, has no sale credit and arrives with z
 test('pending journey blocks ordinary commands and duplicate or stale choices without mutation', () => {
   const state = ready();
   for (const action of [buy('food', 1), sell('aurelia', 1), travel('earth'), { type: 'repair', points: 1 },
-    { type: 'buy_upgrade', id: 'cargo-bracing' }, { type: 'secure_relay', method: 'agreement' },
+    { type: 'buy_upgrade', upgradeId: 'cargo-bracing' }, { type: 'secure_relay', method: 'agreement' },
     { type: 'enroll_expedition' }]) rejects(state, action, 'INVALID_REQUEST');
   rejects(state, { ...choose(state, 'pay'), encounterId: 'other' }, 'STALE_STATE');
   rejects(state, choose(state, 'drop', [{ commodityId: 'aurelia', quantity: 3 }]), 'INVALID_REQUEST');
@@ -166,7 +166,7 @@ test('cargo bracing is capital spend, requires reserve and allows actual 50-unit
   state = act(state, choose(state, 'pay')).state;
   state = act(state, sell('aurelia', 20)).state;
   const profit = state.finances.realizedProfitPence;
-  const result = act(state, { type: 'buy_upgrade', id: 'cargo-bracing' });
+  const result = act(state, { type: 'buy_upgrade', upgradeId: 'cargo-bracing' });
   assert.equal(result.state.cashPence, 2527670);
   assert.equal(result.state.ship.capacityUnits, 50);
   assert.equal(result.state.finances.realizedProfitPence, profit);
@@ -175,12 +175,12 @@ test('cargo bracing is capital spend, requires reserve and allows actual 50-unit
   state = act(result.state, buy('medicine', 50)).state;
   assert.equal(state.ship.cargo[0].quantity, 50);
   rejects(state, buy('food', 1), 'CAPACITY_EXCEEDED');
-  rejects(state, { type: 'buy_upgrade', id: 'cargo-bracing' }, 'INVALID_REQUEST');
+  rejects(state, { type: 'buy_upgrade', upgradeId: 'cargo-bracing' }, 'INVALID_REQUEST');
   const poor = result.state;
   poor.expedition.upgrades = [];
   poor.ship.capacityUnits = 40;
   poor.cashPence = 184999;
-  rejects(poor, { type: 'buy_upgrade', id: 'cargo-bracing' }, 'INSUFFICIENT_CASH');
+  rejects(poor, { type: 'buy_upgrade', upgradeId: 'cargo-bracing' }, 'INSUFFICIENT_CASH');
 });
 
 test('relay agreement consumes two actual Medicine basis once and discounts only future returns', () => {
@@ -222,4 +222,65 @@ test('JSON resume retains original seed, demand and choice; frozen input is neve
   assert.deepEqual(act(state, choose(state, 'pay')), act(snapshot, choose(snapshot, 'pay')));
   assert.equal(state.expedition.pendingJourney.choice, null);
   assert.equal(state.expedition.pendingJourney.demands.payPence, 81680);
+});
+
+test('trusted quote disclosure matches exact pay/drop/run/fight accounting and effects', async () => {
+  const { describeExpeditionAction } = await import('../../src/sim/economy/index.js');
+  const state = ready();
+  const before = structuredClone(state);
+  for (const choice of ['pay', 'drop', 'run', 'fight']) {
+    const action = choose(state, choice, choice === 'drop' ? [{ commodityId: 'aurelia', quantity: 4 }] : undefined);
+    const description = describeExpeditionAction(state, action);
+    const result = act(state, action);
+    assert.equal(description.debitPence, result.receipt.debitPence);
+    assert.equal(description.accounting.operatingExpensePence, result.receipt.operatingExpensePence);
+    assert.equal(description.accounting.cargoWriteOffBasisPence, result.receipt.cargoWriteOffBasisPence);
+    assert.equal(description.accounting.realizedProfitPence, result.receipt.realizedProfitPence);
+    assert.equal(description.consequences.locationAfter, result.state.locationId);
+    assert.equal(description.consequences.battleRequired, ['run', 'fight'].includes(choice));
+    if (choice === 'drop') assert.deepEqual(description.consequences.cargoRemoved,
+      [{ commodityId: 'aurelia', quantity: 4, costBasisPence: 81680 }]);
+  }
+  assert.deepEqual(state, before);
+});
+
+test('repair/upgrade/agreement disclosures use exact shared rules and preserve state', async () => {
+  const { describeExpeditionAction } = await import('../../src/sim/economy/index.js');
+  let state = ready();
+  state = act(state, choose(state, 'pay')).state;
+  state.expedition.shipCondition.hull = 90;
+  let description = describeExpeditionAction(state, { type: 'repair', points: 10 });
+  assert.equal(description.accounting.operatingExpensePence, 5000);
+  assert.equal(description.consequences.hullAfter, 100);
+  description = describeExpeditionAction(state, { type: 'buy_upgrade', upgradeId: 'cargo-bracing' });
+  assert.equal(description.accounting.capitalSpendPence, 150000);
+  assert.equal(description.accounting.realizedProfitPence, 0);
+  assert.equal(description.consequences.capacityAfter, 50);
+  state = act(state, sell('aurelia', 20)).state;
+  state = act(state, buy('medicine', 2)).state;
+  state = act(state, travel('eden')).state;
+  const before = structuredClone(state);
+  description = describeExpeditionAction(state, { type: 'secure_relay', method: 'agreement' });
+  assert.equal(description.debitPence, 30000);
+  assert.equal(description.accounting.cargoWriteOffBasisPence, 20060);
+  assert.equal(description.accounting.realizedProfitPence, -50060);
+  assert.equal(description.consequences.futureReturnFarePence, 15000);
+  assert.deepEqual(state, before);
+});
+
+test('upgrade transport requires upgradeId and receipts retain the exact accepted action', () => {
+  let state = ready();
+  state = act(state, choose(state, 'pay')).state;
+  for (const action of [
+    { type: 'buy_upgrade' }, { type: 'buy_upgrade', id: 'cargo-bracing' },
+    { type: 'buy_upgrade', upgradeId: 1 },
+    { type: 'buy_upgrade', upgradeId: 'cargo-bracing', id: 'cargo-bracing' },
+  ]) rejects(state, action, 'INVALID_REQUEST');
+  rejects(state, { type: 'buy_upgrade', upgradeId: 'other' }, 'NOT_FOUND');
+  const action = { type: 'buy_upgrade', upgradeId: 'cargo-bracing' };
+  assert.deepEqual(quoteAction(state, action), { debitPence: 150000, creditPence: 0 });
+  const result = act(state, action);
+  assert.equal(result.receipt.debitPence, 150000);
+  assert.deepEqual(result.receipt.action, action);
+  assert.equal(Object.hasOwn(result.receipt.action, 'id'), false);
 });

@@ -110,7 +110,7 @@ export function arrive(state, destinationId) {
 }
 const COMPONENTS = ['purchasesPence', 'salesPence', 'salesCostBasisPence', 'travelPence',
   'operatingExpensePence', 'cargoWriteOffBasisPence', 'capitalSpendPence'];
-function signed(value) {
+export function signed(value) {
   if (value < -BigInt(Number.MAX_SAFE_INTEGER) || value > BigInt(Number.MAX_SAFE_INTEGER)) {
     fail('INVALID_REQUEST', 'Financial summary overflow.');
   }
