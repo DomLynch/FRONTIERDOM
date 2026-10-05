@@ -30,18 +30,25 @@ test('visible trade journey, profit receipt and recovery of a lost command respo
     await expect.poll(async () => (await state()).revision).toBe(before.revision + 1);
   }
   async function trade(mode, id, quantity) {
+    if (!await page.locator('[aria-label="Station market"]').isVisible()) {
+      await page.locator('[data-action="panel"][data-id="market"]').click();
+    }
     await page.locator(`[data-action="mode"][data-id="${mode}"]`).click();
     await page.locator(`[data-quantity="${id}"]`).fill(String(quantity));
     await confirm(`[data-action="quote"][data-id="${id}"]`);
   }
+  async function travel() {
+    await page.locator('[data-action="panel"][data-id="route"]').click();
+    await confirm('[data-action="travel"]');
+  }
   await trade('buy', 'medicine', 20);
-  await confirm('[data-action="travel"]');
+  await travel();
   expect((await state()).locationId).toBe('eden');
   await assertLayout();
   await page.screenshot({ path: testInfo.outputPath('eden-arrival.png'), fullPage: true });
   await trade('sell', 'medicine', 20);
   await trade('buy', 'aurelia', 20);
-  await confirm('[data-action="travel"]');
+  await travel();
   await trade('sell', 'aurelia', 20);
   const completed = await state();
   expect(completed.cashPence).toBe(2759350);
@@ -49,7 +56,8 @@ test('visible trade journey, profit receipt and recovery of a lost command respo
   expect(completed.finances.netCashFlowPence).toBe(259350);
   expect(completed.ship.cargo).toEqual([]);
   await expect(page.locator('[aria-label="Company overview"]')).toContainText('£27,593.50');
-  await expect(page.locator('.fd-ledger')).toContainText('£2,593.50');
+  await page.locator('.fd-nav [data-action="panel"][data-id="ledger"]').click();
+  await expect(page.locator('[aria-label="Voyage ledger"]')).toContainText('£2,593.50');
   await page.screenshot({ path: testInfo.outputPath('earth-profit.png'), fullPage: true });
   await page.reload();
   await expect(page.locator('[aria-label="Company overview"]')).toBeVisible();
@@ -64,6 +72,7 @@ test('visible trade journey, profit receipt and recovery of a lost command respo
     await route.abort('failed');
     await page.unroute('**/api/v1/commands');
   }, { times: 1 });
+  await page.locator('[data-action="panel"][data-id="market"]').click();
   await page.locator('[data-action="mode"][data-id="buy"]').click();
   await page.locator('[data-quantity="medicine"]').fill('1');
   await page.locator('[data-action="quote"][data-id="medicine"]').click();

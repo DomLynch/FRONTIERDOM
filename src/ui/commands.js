@@ -40,6 +40,6 @@ export async function maximumQuote(api, action, ceiling) {
       high = quantity - 1;
     }
   }
-  if (!best) throw new Error('No units available at the current price and capacity.');
+  if (!best) throw Object.assign(new Error('No units available at the current price and capacity.'), { code:'NO_AVAILABLE_UNITS' });
   return best;
 }

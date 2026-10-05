@@ -1,17 +1,13 @@
-# Earth–Eden presentation
+# First voyage world
 
-Import `createWorld` from `src/world/index.js`, call `createWorld(app)` after Lead creates the PlayCanvas Application, then call `world.setState(snapshot)` after accepted API snapshots. Only `snapshot.locationId` is read (`earth` or `eden`); the snapshot is never mutated. Earth is shown until the first snapshot. Call `world.destroy()` **before** Lead destroys the Application. Teardown is idempotent.
+`createWorld(app)` attaches visuals to the caller's existing PlayCanvas2.23.0 Application and returns `{setState,destroy}`. Only accepted `state.locationId` is read; simulation/auth/economy stay outside this module. Lead owns Application/start/canvas/DPR/resize. Destroy World before Application.
 
-Lead owns start/resize/DPR/Application destruction. World listens to graphics-device resize events to reframe its camera; its composition raises the freighter above centre to leave room for lower-screen UI. Integration must inspect this against actual overlay dimensions in portrait and landscape. Lead currently caps DPR at 1.5. No duplicate application, canvas styling, input handlers, audio, network calls or state resolution lives here.
+Horizon uses authored chamfered loft geometry, a keel/cockpit, oxidised cargo cassettes, engine pressure barrels/exhaust bells, landing skids, service patches and running lights. Earth has a textured original procedural planet, modular orbital habitat/solar arrays, docking collar and enormous ancient gate. Eden replaces orbital structures with luminous waterways, organic terraces, floating canopies and a distant living moon. The gate's familiar silhouette connects the two places.
 
-Earth uses a blue modular orbital terminal; Eden uses jade landforms, violet minerals and canopies. Both reuse a ceramic/oxidised cargo freighter and segmented gateway. Ship bob and star parallax are restrained, stop with reduced motion or hidden documents, and use elapsed frame time. Device-loss callbacks suspend movement until Engine restores its GPU resources; restoration reframes the camera. There is no travel timer: server travel resolves immediately.
+All meshes, layouts, colours and 512x256 procedural planet maps are FRONTIERDOM-original code in geometry.js/index.js. Engine primitives/materials come from PlayCanvas(MIT). No third-party models/textures/assets or paid services. No GLB or Editor export is claimed; parked Editor pilot is unchanged.
 
-Budget by construction: two directional lights, no shadows/post-processing/textures; fewer than 70 visible primitive mesh instances plus one 100-star mesh per location. No model downloads. Initial scene creation also constructs the inactive destination. This is a source budget, not a measured draw-call/frame-time receipt.
+Transit is cosmetic1.6seconds, starts only after a confirmed location differs from a prior snapshot, and never advances game state. Initial load/reload does not manufacture a trip. Repeated same-location snapshots do not restart transit. Reduced motion, hidden document, pagehide, context loss/restore and disposal cancel it. Subtle idle motion stops while hidden or reduced motion. Every external listener is removed with owned hierarchy/materials/textures; Engine-owned primitive caches remain caller-owned.
 
-## Provenance
+Performance choices: two shadow-free directional lights, no post-processing or external model downloads; shared palette and one star mesh. Both location hierarchies are allocated once and toggled. Initial scene/client download/frame pacing still need target-device measurement; source budgets are not hardware acceptance.
 
-All geometry, palette, ship layout and star placement are authored directly in `index.js` for FRONTIERDOM. Primitives come from PlayCanvas Engine; stars use one deterministic quad mesh. No external models, images, textures or paid assets were imported. PlayCanvas is supplied by Lead's pinned dependency (2.23.0, MIT). This procedural ship is the first slice's freighter, not an exported GLB or an approved final asset.
-
-## Validation scope
-
-Local JavaScript syntax and whitespace checks; API names/signatures checked against published PlayCanvas 2.23.0 declarations. No runtime, capture, context-recovery or phone acceptance claim. Lead's integrated VPS checks should inspect Earth/Eden, portrait/landscape overlay framing, repeated state changes, reduced motion, context loss/restore and destroy/remount. Actual phone checks remain separate.
+`transit.test.js` checks meaningful first-load/change/repeat/cancel behavior. `capture.mjs` is QA tooling for VPS only: captures the built actual candidate main/UI/World with intercepted deterministic API snapshots, writes scene and UI shots, and fails on page errors. It neither contacts production nor proves trade/authority. Integrated real-API and actual-phone acceptance remain Lead/UI responsibilities.
