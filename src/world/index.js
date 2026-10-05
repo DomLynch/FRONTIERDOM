@@ -1,6 +1,7 @@
 import { Entity, Color, Vec3, StandardMaterial, Texture, FILTER_LINEAR, ADDRESS_CLAMP_TO_EDGE, TONEMAP_ACES, CULLFACE_NONE, BLEND_NORMAL } from 'playcanvas';
 import { loft, ring, terrain, growth, attachMesh, meshFromTriangles } from './geometry.js';
 import { createTransit } from './transit.js';
+import { createBattleScene } from './battle.js';
 
 /** One caller-owned Application. All simulation/state resolution stays outside the renderer. */
 export function createWorld(app) {
@@ -138,6 +139,9 @@ export function createWorld(app) {
   // Small asymmetric service patches and heat-scarring make the reusable ship look worked.
   for (let i = 0; i < 7; i++) primitive(ship, 'Maintenance patch', 'box', [-0.5 + (i % 3) * 0.4, 1.42, -3 + i * 0.65], [0.24, 0.018, 0.28], i % 2 ? steel : yellow);
 
+  const battle = createBattleScene({root, primitive, custom, material, device, horizon: ship});
+  let stateCompany = null;
+
   // Eden is a living valley: branching waterways and floating organic terraces, not a green dock.
   custom(eden, 'Foreground living terrace', terrain(device, 17, 2.5, 1), [0, -2, 0], deepJade);
   custom(eden, 'Distant living terrace', terrain(device, 29, 6, 3), [0, -2, -44], jade);
@@ -166,20 +170,26 @@ export function createWorld(app) {
     if (disposed || lost || !canvas.clientWidth || !canvas.clientHeight) return;
     const aspect = canvas.clientWidth / canvas.clientHeight;
     // Frame the whole gate at tall-phone widths; preserve a readable foreground ship.
-    if (aspect < 0.85) { camera.setPosition(10, 16, 72); aim.set(1, 3, -14); }
+    if (battle.active) {
+      if (aspect < 0.85) { camera.setPosition(0, 24, 58); aim.set(0, 7, -5); }
+      else { camera.setPosition(16, 22, 42); aim.set(-2, 4, -5); }
+    } else if (aspect < 0.85) { camera.setPosition(10, 16, 72); aim.set(1, 3, -14); }
     else { camera.setPosition(22, 13, 30); aim.set(0, 4, -10); }
     camera.lookAt(aim);
   }
   function showLocation(next) {
-    location = next; earth.enabled = next === 'earth'; eden.enabled = next === 'eden';
+    location = next; earth.enabled = !battle.active && next === 'earth'; eden.enabled = !battle.active && next === 'eden';
+    gate.enabled = !battle.active;
     camera.camera.clearColor = next === 'earth' ? new Color(0.025, 0.047, 0.08) : new Color(0.075, 0.14, 0.17);
     app.scene.ambientLight.copy(next === 'earth' ? new Color(0.3, 0.35, 0.4) : new Color(0.32, 0.43, 0.39));
+    if (battle.active) camera.camera.clearColor = new Color(0.025, 0.047, 0.08);
     key.light.color = next === 'earth' ? new Color(1, 0.9, 0.77) : new Color(0.94, 0.86, 1);
     fill.light.color = next === 'earth' ? new Color(0.45, 0.65, 0.83) : new Color(0.44, 0.78, 0.68);
   }
-  function cancelMotion() { transit.cancel(); crossing.enabled = false; ship.setLocalPosition(0, 0, -3); }
+  function cancelMotion() { transit.cancel(); crossing.enabled = false; battle.cancel(); if (!battle.active) ship.setLocalPosition(0, 0, -3); }
   function update(dt) {
     if (disposed || lost || document.hidden || reducedMotion) return;
+    if (battle.active) { battle.update(dt); return; }
     elapsed += dt;
     const progress = transit.advance(dt);
     crossing.enabled = transit.active;
@@ -205,12 +215,23 @@ export function createWorld(app) {
   return {
     setState(state) {
       if (disposed) return;
+      if (stateCompany !== (state?.companyId ?? null)) { battle.clear(); ship.setLocalEulerAngles(0, -30, 0); resize(); }
+      stateCompany = state?.companyId ?? null;
       transit.accept(state?.locationId, reducedMotion || document.hidden || lost, state?.companyId ?? null);
       showLocation(state.locationId);
-      if (!transit.active) { crossing.enabled = false; ship.setLocalPosition(0, 0, -3); }
+      if (!transit.active && !battle.active) { crossing.enabled = false; ship.setLocalPosition(0, 0, -3); }
+    },
+    setEncounter(encounter, companyId) {
+      if (disposed) return;
+      // The accepted UI state/session establishes the company before projection.
+      if (companyId && companyId !== stateCompany) return;
+      battle.accept(encounter, companyId, reducedMotion || document.hidden || lost);
+      transit.cancel(); crossing.enabled = false;
+      if (!battle.active) { ship.setLocalPosition(0, 0, -3); ship.setLocalEulerAngles(0, -30, 0); }
+      showLocation(location); resize();
     },
     destroy() {
-      if (disposed) return; disposed = true;
+      if (disposed) return; disposed = true; battle.clear();
       motion.removeEventListener('change', motionChanged);
       document.removeEventListener('visibilitychange', visibilityChanged);
       window.removeEventListener('pagehide', pageHidden);
