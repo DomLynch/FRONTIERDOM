@@ -1,11 +1,11 @@
 # Development lanes
 
-Adapt ARMAGEDOM's ownership and receipts, with a smaller team appropriate to this prototype. All lanes read canonical state and use one shared Codex handover. Onboarding means inspect and report readiness; it does not start game implementation.
+Adapt ARMAGEDOM's ownership and receipts, with a smaller team appropriate to this prototype. All lanes read canonical state and use one shared Codex handover. Owner authorized implementation/publication and appointed Lead developer coordinator on 5 October. Strategy consults on product; Lead owns end-to-end delivery. Earlier readiness-only onboarding restrictions are superseded for assigned work.
 
 | Chat | Requested model | Ownership / first task |
 | --- | --- | --- |
-| FRONTIERDOM - Strategy Dev | gpt-6-astra / high | Scope, priorities, player acceptance and Lead oversight; current chat |
-| FRONTIERDOM - Lead Dev | gpt-6.1-sol / medium | Integration, bootstrap, package/lock and shared data/API contracts; propose the smallest first playable baseline |
+| FRONTIERDOM - Strategy Dev | gpt-6-astra / high | Product strategy, scope, priorities and player experience consultation |
+| FRONTIERDOM - Lead Dev | gpt-6.1-sol / medium | Developer coordination, end-to-end delivery, integration, bootstrap, package/lock, shared contracts and release acceptance |
 | FRONTIERDOM - Economy & Simulation | gpt-6.1-sol / medium | Market/price rules, cargo, contracts, travel/encounter generation and company progression; defines economic consequences with Backend |
 | FRONTIERDOM - Combat | gpt-6.1-sol / medium | Seeded tactical battle calculations, targeting, accuracy/damage/armour/ammo/crew, retreat/escape, balance and battle event/result schema |
 | FRONTIERDOM - Backend | gpt-6.1-sol / medium | Supabase/Auth/Postgres, persistent company/ship/crew/cargo data, authoritative atomic transactions/settlement, idempotency/concurrency, permissions/RLS, migrations and recovery |
@@ -14,11 +14,11 @@ Adapt ARMAGEDOM's ownership and receipts, with a smaller team appropriate to thi
 | FRONTIERDOM - Auditor | gpt-6.1-sol / medium | Independent code quality, correctness, maintainability, regression risk, scope discipline and milestone evidence review |
 | FRONTIERDOM - Deploy | gpt-6.1-sol / medium | Reproducible packaging/manifests, private previews, VPS hosting, DNS/TLS, served identity and rollback; Lead accepts integration |
 
-Owner explicitly separated Auditor/Deploy and added Combat/Backend on 5 October. The old combined chat is preserved and renamed Auditor. These are distinct permanent ownership lanes; onboarding remains read-only. Backend starts with a small authoritative trading transaction foundation, growing with game requirements.
+Owner explicitly separated Auditor/Deploy and added Combat/Backend on 5 October. The old combined chat is preserved and renamed Auditor. These are distinct permanent ownership lanes; implementation and first-release publication are authorized. Backend starts with a small authoritative trading transaction foundation, growing with game requirements.
 
 ## Created chats — 5 October 2026
 
-All nine chats belong in the FRONTIERDOM custom sidebar section. Eight developer chats use GPT 6.1 Sol medium and readiness-only prompts; Strategy's requested model is Astra 6 high.
+All nine chats belong in the FRONTIERDOM custom sidebar section. Eight developer chats use GPT 6.1 Sol medium and initially received readiness-only prompts; Strategy's requested model is Astra 6 high.
 
 | Lane | Chat ID |
 | --- | --- |
@@ -44,7 +44,7 @@ Compared with ARMAGEDOM, FRONTIERDOM now has separate Strategy, Lead, Economy, C
 
 Only one scene owner uses the connected Editor MCP at a time. Do not have multiple chats mutate the same Editor scene. Code/scene exports handed over must record the Git commit, Editor project/scene/checkpoint, selected engine version, export digest and known runtime gaps.
 
-Readiness reports contain scope, exact proposed owned files, dependencies, success check and blockers. No code edits, builds, heavy art jobs, paid calls, pushes or deployments during onboarding. Strategy starts the first bounded implementation assignment after reviewing readiness.
+Readiness reports contain scope, exact proposed owned files, dependencies, success check and blockers. No code edits, builds, heavy art jobs, paid calls, pushes or deployments during onboarding. Lead assigns and coordinates bounded implementation work under current owner authority.
 
 For future implementation handoffs: base and component commit, exact file list, inputs/art provenance, focused validation and remaining phone risks. Lead integrates small deltas; public activation follows accepted gameplay evidence and existing owner authority.
 

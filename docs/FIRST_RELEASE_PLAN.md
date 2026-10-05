@@ -1,6 +1,6 @@
 # First playable release — 5 October 2026
 
-Owner explicitly authorized implementation and a live FRONTIERDOM prototype. This supersedes readiness-only onboarding. Strategy coordinates; Lead integrates; Deploy alone activates the reviewed release.
+Owner explicitly authorized implementation and a live FRONTIERDOM prototype. This supersedes readiness-only onboarding. Lead coordinates developers and owns end-to-end delivery; Strategy consults on product scope/experience; Deploy alone activates the reviewed release.
 
 ## Deliverable
 
