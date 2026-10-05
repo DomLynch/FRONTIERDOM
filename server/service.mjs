@@ -208,9 +208,17 @@ export function createService(pool, economy, { expedition = false } = {}) {
           transition=quote.action.type==='battle_advance' ? advanceOpening(record,quote.action) : beginOpening(record,quote.action);
           metadata.acceptedCommands=transition.schedule;
         }
+        // Keep the final lifetime slot for an actual terminal settlement. The
+        // trusted resolver runs purely; rejected choices charge no service fee.
+        if(transition && !transition.result && row.command_count>=MAX_COMMANDS-1) {
+          fail('RATE_LIMITED','The final command slot is reserved for terminal settlement. Request a terminal advance or pay/drop choice.',429);
+        }
         const result=rules(()=>transition?.result ? economy.applyBattleSettlement(row.state,quote.action,transition.result,metadata) :
           quote.action.type==='battle_advance' ? economy.applyBattleProgress(row.state,quote.action,metadata) : economy.applyAction(row.state,quote.action,metadata));
         if(expedition && !beforePending && result.state.expedition.pendingJourney) {
+          // Economy alone decides whether this departure reserves an encounter;
+          // require departure + settlement capacity before any fare is persisted.
+          if(row.command_count>=MAX_COMMANDS-1) fail('RATE_LIMITED','This crossing requires two available command slots for departure and settlement.',429);
           const pending=result.state.expedition.pendingJourney;
           record=await freezeEncounter(client,{id:pending.encounterId,companyId:row.id,departureCommandId:payload.commandId,
             sourceRevision:row.state.revision,seed:pending.seed,input:{pendingJourney:pending,ship:row.state.ship,crew:row.state.crew}});

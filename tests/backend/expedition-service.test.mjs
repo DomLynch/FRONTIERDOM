@@ -213,3 +213,75 @@ test('ledger failure rolls back prepaid fare, frozen seed and pending crossing; 
   const retried=await send(g,input);assert.equal(retried.status,200);assert.equal(retried.body.state.cashPence,2170750);
   assert.deepEqual((await send(g,input)).body,{...retried.body,replayed:true});
 });
+
+// Isolated quota fixtures seed only the lifetime counter; real commands still
+// use HTTP, restricted-role PostgreSQL, the company lock and original ledger.
+async function quotaSnapshot(g) {
+  return {
+    company:(await admin.query('select state,command_count from frontierdom.companies where id=$1',[g.state.companyId])).rows[0],
+    encounters:(await admin.query('select * from frontierdom.encounters where company_id=$1',[g.state.companyId])).rows,
+    ledger:(await admin.query('select command_id,payload,response from frontierdom.commands where company_id=$1 order by command_id',[g.state.companyId])).rows
+  };
+}
+async function seedCommandCount(g,count) {
+  await admin.query('update frontierdom.companies set command_count=$2 where id=$1',[g.state.companyId,count]);
+}
+async function rejectQuota(g,action) {
+  const q=await quote(g,action),before=await quotaSnapshot(g);
+  const input={commandId:randomUUID(),quoteId:q.id,expectedRevision:q.expectedRevision};
+  const rejected=await send(g,input);
+  assert.equal(rejected.status,429,JSON.stringify(rejected.body));assert.equal(rejected.body.error.code,'RATE_LIMITED');
+  assert.deepEqual(await quotaSnapshot(g),before);
+  return input;
+}
+
+test('quota reserves settlement: loaded departure at999 rejects without fare, seed or ledger effects',async()=>{
+  const g=await fixtureReturn({cargo:true,cash:200000});await seedCommandCount(g,999);
+  await rejectQuota(g,{type:'travel',destinationId:'earth'});
+  const snapshot=await quotaSnapshot(g);
+  assert.equal(snapshot.company.command_count,999);assert.equal(snapshot.company.state.cashPence,200000);
+  assert.equal(snapshot.company.state.expedition.pendingJourney,null);assert.equal(snapshot.encounters.length,0);assert.equal(snapshot.ledger.length,0);
+});
+
+test('quota admits998 departure then terminal pay/drop/tick-zero choice at1000, with exact replay before cap',async()=>{
+  for(const choice of ['pay','drop','run','fight']) {
+    const tactical=['run','fight'].includes(choice);
+    const g=await fixtureReturn({cargo:true,cash:200000,hull:tactical?25:100});await seedCommandCount(g,998);
+    const departed=await command(g,{type:'travel',destinationId:'earth'}),id=departed.body.encounter.id;
+    assert.equal((await quotaSnapshot(g)).company.command_count,999);
+    if(choice==='pay') {
+      for(const rejected of ['run','fight']) await rejectQuota(g,{type:'encounter_choice',encounterId:id,choice:rejected,posture:'balanced',protectCargo:true,retreatHullPercent:0});
+    }
+    const action={type:'encounter_choice',encounterId:id,choice,
+      ...(choice==='drop'?{cargoSelection:[{commodityId:'aurelia',quantity:4}]}:{}),
+      ...(tactical?{posture:'balanced',protectCargo:true,retreatHullPercent:0}:{})};
+    const settled=await command(g,action),snapshot=await quotaSnapshot(g);
+    assert.equal(snapshot.company.command_count,1000);assert.equal(snapshot.ledger.length,2);assert.ok(snapshot.ledger.length<=1000);
+    assert.equal(settled.body.state.locationId,'earth');assert.equal(settled.body.state.expedition.pendingJourney,null);
+    assert.equal(snapshot.encounters[0].status,'resolved');
+    if(tactical) {assert.equal(settled.body.encounter.tick,0);assert.equal(settled.body.encounter.result.outcome,'boarded');}
+    await admin.query("update frontierdom.quotes set expires_at=now()-interval '1 second' where id=any($1::uuid[])",[ [departed.quote.id,settled.quote.id] ]);
+    assert.deepEqual((await send(g,departed.input)).body,{...departed.body,replayed:true});
+    assert.deepEqual((await send(g,settled.input)).body,{...settled.body,replayed:true});
+    await rejectQuota(g,{type:'buy',commodityId:'food',quantity:1});
+    assert.deepEqual(await quotaSnapshot(g),snapshot);
+  }
+});
+
+test('quota keeps active battle final slot for actual terminal advance, without rejected command/fee/progress effects',async()=>{
+  const g=await fixtureReturn({cargo:true,cash:200000});await seedCommandCount(g,997);
+  const departed=await command(g,{type:'travel',destinationId:'earth'}),id=departed.body.encounter.id;
+  const chosen=await command(g,{type:'encounter_choice',encounterId:id,choice:'fight',posture:'balanced',protectCargo:true,retreatHullPercent:0});
+  const before=await quotaSnapshot(g);assert.equal(before.company.command_count,999);assert.equal(before.encounters[0].status,'active');
+  await rejectQuota(g,{type:'battle_advance',encounterId:id,ticks:1,command:{type:'posture',posture:'defensive'}});
+  const terminal=await command(g,{type:'battle_advance',encounterId:id,ticks:180}),snapshot=await quotaSnapshot(g),record=snapshot.encounters[0];
+  assert.equal(snapshot.company.command_count,1000);assert.equal(snapshot.ledger.length,3);assert.ok(snapshot.ledger.length<=1000);
+  assert.equal(record.status,'resolved');assert.deepEqual(record.schedule,[]);
+  assert.deepEqual(record.continuation,resolveBattle(record.battle_input,[]));
+  assert.equal(terminal.body.state.expedition.pendingJourney,null);assert.equal(terminal.body.state.locationId,'earth');
+  assert.equal(terminal.body.receipt.debitPence,0);assert.equal(terminal.body.state.cashPence,chosen.body.state.cashPence);
+  assert.equal(terminal.body.state.finances.operatingExpensePence,12000);
+  await admin.query("update frontierdom.quotes set expires_at=now()-interval '1 second' where id=$1",[terminal.quote.id]);
+  assert.deepEqual((await send(g,terminal.input)).body,{...terminal.body,replayed:true});
+  assert.deepEqual(await quotaSnapshot(g),snapshot);
+});
