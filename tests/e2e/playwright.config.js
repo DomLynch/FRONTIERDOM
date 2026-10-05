@@ -8,6 +8,6 @@ export default defineConfig({
   use: { baseURL: process.env.FRONTIERDOM_TEST_URL, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   projects: [
     { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'mobile-chromium', use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium' } }
+    { name: 'mobile-chromium', testIgnore: 'trade-api.spec.js', use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium' } }
   ]
 });
