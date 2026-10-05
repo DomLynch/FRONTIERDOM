@@ -207,7 +207,7 @@ try {
   await next('buy-aurelia');await next('travel-earth');await next('sell-aurelia');
   const final=await snapshot(fresh);assert.equal(final.locationId,'earth');assert.equal(final.ship.cargo.length,0);assert.equal(final.receipts.length,6);
   assert.deepEqual(await snapshot(b),beforeB);assert.deepEqual(errors,[]);
-  await page.locator('[data-action="panel"][data-id="ledger"]').click();
+  await page.locator('.fd-nav [data-action="panel"][data-id="ledger"]').click();
   assert.match(await page.locator('.fd-totals').innerText(),/Realized profit.*Net cash flow/s);
   await page.screenshot({path:`${output}/ledger-portrait.png`});await page.locator('[data-action="close-panel"]').click();
   for(const viewport of [{width:320,height:700},{width:844,height:390},{width:1440,height:900}]){await page.setViewportSize(viewport);await layout();await page.screenshot({path:`${output}/final-${viewport.width}.png`});}
