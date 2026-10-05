@@ -59,3 +59,26 @@ test('read failure is retryable without an unknown economic command', async () =
   const api = createApi({ fetchImpl: async () => { throw new Error('offline'); } });
   await assert.rejects(api.state(), error => error.retryable && !error.outcomeUnknown);
 });
+
+test('encounter paging is an authenticated no-store read without an economic payload', async () => {
+  const id = '8d543ea1-a20c-42bf-a79d-85f4ae37b019';
+  const api = createApi({ fetchImpl: async (url, options) => {
+    assert.equal(url, `/api/v1/encounters/${id}?from=128`);
+    assert.equal(options.method, 'GET');
+    assert.equal(options.credentials, 'same-origin');
+    assert.equal(options.cache, 'no-store');
+    assert.equal(options.body, undefined);
+    return Response.json({ apiVersion: 1, encounter: { id, cursor: { next: null } } });
+  } });
+  assert.equal((await api.encounter(id, 128)).encounter.id, id);
+});
+
+test('invalid encounter paths and cursors cannot start transport', async () => {
+  let requests = 0;
+  const api = createApi({ fetchImpl: async () => { requests++; throw new Error('unexpected transport'); } });
+  const id = '8d543ea1-a20c-42bf-a79d-85f4ae37b019';
+  for (const [encounterId, from] of [[`${id}/../../commands`, 0], ['', 0], [id, -1], [id, 2049], [id, 1.5], [id, '0']]) {
+    await assert.rejects(api.encounter(encounterId, from), error => error.code === 'INVALID_REQUEST' && !error.outcomeUnknown);
+  }
+  assert.equal(requests, 0);
+});

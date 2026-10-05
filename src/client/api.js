@@ -68,6 +68,13 @@ export function createApi({ fetchImpl = globalThis.fetch } = {}) {
     },
     session: () => request('session', {}),
     state: () => request('state'),
+    encounter: (encounterId, from = 0) => {
+      if (typeof encounterId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(encounterId)
+        || !Number.isSafeInteger(from) || from < 0 || from > 2048) {
+        return Promise.reject(new ApiError(400, { code: 'INVALID_REQUEST', message: 'Invalid encounter or event cursor.' }));
+      }
+      return request(`encounters/${encodeURIComponent(encounterId)}?from=${from}`);
+    },
     quote: (action) => request('quotes', { action }),
     // Caller retains this exact object and commandId until outcome is known.
     command: (command, { expectedCompanyId } = {}) => request('commands', command, expectedCompanyId)

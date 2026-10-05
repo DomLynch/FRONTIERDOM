@@ -10,6 +10,7 @@ try {
   world = createWorld(engine.app);
   ui = mountUI(container, {
     api: createApi(), onState: state => world.setState(state),
+    onEncounter: (encounter, companyId) => world.setEncounter?.(encounter, companyId),
     // Public project origin only; provider tokens and keys remain server-side.
     googleAuthOrigin: 'https://eyfojjzajbfliuokaplx.supabase.co'
   });
