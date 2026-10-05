@@ -3,7 +3,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { transaction } from './database.mjs';
 import { ApiError, actionInput, commandInput, exactObject, uuid } from './errors.mjs';
 import { assertExpeditionAction, expeditionBinding, assertExpeditionQuote } from './expedition-boundary.mjs';
-import { freezeEncounter, loadEncounter, continueEncounter } from './encounter-store.mjs';
+import { freezeEncounter, loadEncounter, continueEncounter, companyEncounter } from './encounter-store.mjs';
+import {openingInput,beginOpening,validateAdvance,advanceOpening,projectEncounter} from './opening-battle.mjs';
 
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
 const QUOTE_SECONDS = 60;
@@ -42,6 +43,10 @@ function rules(run) {
 export function createService(pool, economy, { expedition = false } = {}) {
   if(expedition && typeof economy.migrateExpeditionState!=='function') throw new Error('Expedition requires the accepted Economy migration helper.');
   const runTransaction = (client, run) => client ? run(client) : transaction(pool, run);
+  const battleReady=typeof economy.applyBattleProgress==='function' && typeof economy.applyBattleSettlement==='function';
+  async function snapshot(client,row) {
+    return {apiVersion:1,state:row.state,...(expedition?{encounter:projectEncounter(await companyEncounter(client,row.id))}:{})};
+  }
   async function prepare(client,row) {
     if(!expedition) return row;
     const state=rules(()=>economy.migrateExpeditionState(row.state));
@@ -60,7 +65,7 @@ export function createService(pool, economy, { expedition = false } = {}) {
     assertExpeditionAction(state,action);
     // Run/fight must never debit a fee or strand a journey before the accepted
     // nonlethal Combat + Economy terminal settlement adapter is installed.
-    if(action.type==='battle_advance' || (action.type==='encounter_choice' && ['run','fight'].includes(action.choice))) {
+    if(!battleReady && (action.type==='battle_advance' || (action.type==='encounter_choice' && ['run','fight'].includes(action.choice)))) {
       throw new ApiError('UNAVAILABLE','Battle continuation is awaiting the accepted settlement adapter.',503,true);
     }
   }
@@ -72,7 +77,7 @@ export function createService(pool, economy, { expedition = false } = {}) {
           const row = await prepare(client,await company(client, token,expedition));
           await client.query(`update frontierdom.sessions set expires_at = clock_timestamp() + interval '30 days'
             where token_hash = $1`, [checkedToken(token)]);
-          return { body: { apiVersion: 1, state: row.state }, token, maxAge: SESSION_SECONDS };
+          return { body: await snapshot(client,row), token, maxAge: SESSION_SECONDS };
         }
         // Serialize global admission independently of company commands.
         await client.query('select pg_advisory_xact_lock(617349021)');
@@ -110,12 +115,20 @@ export function createService(pool, economy, { expedition = false } = {}) {
       await client.query(`insert into frontierdom.sessions(token_hash,company_id,expires_at) values($1,$2,$3)
         on conflict(token_hash) do update set expires_at=excluded.expires_at
         where frontierdom.sessions.company_id=excluded.company_id`, [checkedToken(token), row.id, account.expires_at]);
-      return { apiVersion: 1, state: row.state };
+      return snapshot(client,row);
     },
 
     async state(token, client) {
       if(!expedition) return {apiVersion:1,state:(await company(client||pool,token)).state};
-      return runTransaction(client,async connection=>({apiVersion:1,state:(await prepare(connection,await company(connection,token,true))).state}));
+      return runTransaction(client,async connection=>snapshot(connection,await prepare(connection,await company(connection,token,true))));
+    },
+
+    async encounter(token,id,from=0,existingClient) {
+      if(!expedition) throw new ApiError('NOT_FOUND','Endpoint not found.',404);
+      return runTransaction(existingClient,async client=>{
+        const row=await company(client,token,true);
+        return {apiVersion:1,encounter:projectEncounter(await loadEncounter(client,row.id,id),from)};
+      });
     },
 
     async quote(token, body, existingClient) {
@@ -124,12 +137,17 @@ export function createService(pool, economy, { expedition = false } = {}) {
       return runTransaction(existingClient, async client => {
         const row = await prepare(client,await company(client, token, true));
         allowed(row.state,action);
+        if(action.type==='battle_advance') validateAdvance(await loadEncounter(client,row.id,action.encounterId),action);
+        if(action.type==='encounter_choice' && ['run','fight'].includes(action.choice)) openingInput(await loadEncounter(client,row.id,action.encounterId),action);
         const prices = rules(() => economy.quoteAction(row.state, action));
+        const disclosures=expedition && typeof economy.describeExpeditionAction==='function' &&
+          ['enroll_expedition','encounter_choice','repair','buy_upgrade','secure_relay'].includes(action.type) ?
+          rules(()=>economy.describeExpeditionAction(row.state,action)) : undefined;
         const { rows: [clock] } = await client.query('select clock_timestamp() as now');
         const expiresAt = new Date(clock.now.getTime() + QUOTE_SECONDS * 1000).toISOString();
         const quote = { id: randomUUID(), action, expectedRevision: row.state.revision,
           expiresAt, debitPence: prices.debitPence, creditPence: prices.creditPence,
-          ...(expedition ? {rulesVersion:'expedition-1',...expeditionBinding(row.state),
+          ...(expedition ? {rulesVersion:'expedition-1',...expeditionBinding(row.state),...(disclosures?{disclosures}:{}),
             encounter: row.state.expedition.pendingJourney ? {
               id:row.state.expedition.pendingJourney.encounterId,
               demands:row.state.expedition.pendingJourney.demands,
@@ -180,21 +198,31 @@ export function createService(pool, economy, { expedition = false } = {}) {
           fail('STALE_QUOTE', 'Quote price changed.');
         }
         const { rows: [clock] } = await client.query('select clock_timestamp() as now');
-        const metadata={commandId:payload.commandId,receiptId:randomUUID(),occurredAt:clock.now.toISOString(),
-          ...(expedition ? {encounterId:randomUUID(),seed:randomBytes(4).readUInt32LE(0)} : {})};
         const beforePending=row.state.expedition?.pendingJourney;
-        const result = rules(() => economy.applyAction(row.state, quote.action,metadata));
+        const metadata={commandId:payload.commandId,receiptId:randomUUID(),occurredAt:clock.now.toISOString(),
+          ...(expedition ? {encounterId:beforePending?.encounterId ?? randomUUID(),seed:beforePending?.seed ?? randomBytes(4).readUInt32LE(0)} : {})};
+        let record=null,transition=null,eventFrom;
+        if(expedition && beforePending && (quote.action.type==='battle_advance' || (quote.action.type==='encounter_choice' && ['run','fight'].includes(quote.action.choice)))) {
+          record=await loadEncounter(client,row.id,beforePending.encounterId,{lock:true});
+          eventFrom=record.continuation?.events.length || 0;
+          transition=quote.action.type==='battle_advance' ? advanceOpening(record,quote.action) : beginOpening(record,quote.action);
+          metadata.acceptedCommands=transition.schedule;
+        }
+        const result=rules(()=>transition?.result ? economy.applyBattleSettlement(row.state,quote.action,transition.result,metadata) :
+          quote.action.type==='battle_advance' ? economy.applyBattleProgress(row.state,quote.action,metadata) : economy.applyAction(row.state,quote.action,metadata));
         if(expedition && !beforePending && result.state.expedition.pendingJourney) {
           const pending=result.state.expedition.pendingJourney;
-          await freezeEncounter(client,{id:pending.encounterId,companyId:row.id,departureCommandId:payload.commandId,
+          record=await freezeEncounter(client,{id:pending.encounterId,companyId:row.id,departureCommandId:payload.commandId,
             sourceRevision:row.state.revision,seed:pending.seed,input:{pendingJourney:pending,ship:row.state.ship,crew:row.state.crew}});
+        } else if(transition) {
+          record=await continueEncounter(client,record,transition);
         } else if(expedition && beforePending && !result.state.expedition.pendingJourney) {
           const previous=await loadEncounter(client,row.id,beforePending.encounterId,{lock:true});
-          await continueEncounter(client,previous,{status:'resolved',choice:quote.action.choice,tick:0,schedule:[],continuation:null,
+          record=await continueEncounter(client,previous,{status:'resolved',choice:quote.action.choice,tick:0,schedule:[],continuation:null,
             result:{kind:'noncombat',receipt:result.receipt}});
         }
         const response = { apiVersion: 1, commandId: payload.commandId, state: result.state,
-          receipt: result.receipt, replayed: false };
+          receipt: result.receipt, replayed: false,...(expedition ? {encounter:projectEncounter(record||await companyEncounter(client,row.id),eventFrom)} : {}) };
         if (Buffer.byteLength(JSON.stringify(result.state)) > MAX_STATE_BYTES ||
             Buffer.byteLength(JSON.stringify(response)) > MAX_RESPONSE_BYTES) {
           fail('RATE_LIMITED', 'Prototype storage capacity reached.', 429);

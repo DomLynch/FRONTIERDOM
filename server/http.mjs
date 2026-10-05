@@ -56,7 +56,8 @@ export function createApiServer({ service, auth, authMode = 'supabase', siteOrig
       if (req.method === 'POST' && req.headers.origin !== siteOrigin) throw new ApiError('FORBIDDEN', 'Origin is not allowed.', 403);
       const url = new URL(req.url, siteOrigin);
       const path = url.pathname;
-      if (url.search && path!=='/api/v1/auth/callback') throw invalid('Query parameters are not supported.');
+      const encounterPath=path.match(/^\/api\/v1\/encounters\/([^/]+)$/);
+      if (url.search && path!=='/api/v1/auth/callback' && !encounterPath) throw invalid('Query parameters are not supported.');
       if (req.url.length>4096) throw invalid('Request URL too large.');
       const token = cookieToken(req.headers.cookie,authMode==='supabase' ? ACCOUNT_COOKIE : GUEST_COOKIE);
       const ip = clientIP(req, trustProxy);
@@ -86,6 +87,11 @@ export function createApiServer({ service, auth, authMode = 'supabase', siteOrig
           res.setHeader('Set-Cookie',cookie(ACCOUNT_COOKIE,'',0));
           result=await auth.logout(token,body);
         } else throw new ApiError('NOT_FOUND','Endpoint not found.',404);
+      } else if(req.method==='GET' && encounterPath) {
+        const names=[...url.searchParams.keys()],raw=url.searchParams.get('from') ?? '0';
+        if(names.length>1 || names.some(name=>name!=='from') || !/^(0|[1-9][0-9]{0,3})$/.test(raw) || Number(raw)>2048) throw invalid('Invalid event cursor.');
+        const id=uuid(encounterPath[1]),from=Number(raw);
+        result=authMode==='supabase' ? await auth.withUser(token,({client})=>service.encounter(token,id,from,client)) : await service.encounter(token,id,from);
       } else if (req.method === 'POST' && path === '/api/v1/session' && authMode==='supabase') {
         result=await auth.withUser(token,({user,client})=>service.accountSession(token,user,body,client));
       } else if (req.method === 'POST' && path === '/api/v1/session') {

@@ -45,9 +45,13 @@ function commodity(value) { return typeof value==='string' && /^[a-z][a-z0-9-]{0
 function expeditionActionInput(action) {
   if(action.type==='enroll_expedition') exactObject(action,['type']);
   else if(action.type==='encounter_choice') {
-    exactObject(action,action.choice==='drop' ? ['type','encounterId','choice','cargoSelection'] : ['type','encounterId','choice']);
+    const tactical=['run','fight'].includes(action.choice);
+    exactObject(action,action.choice==='drop' ? ['type','encounterId','choice','cargoSelection'] : tactical ?
+      ['type','encounterId','choice','posture','protectCargo','retreatHullPercent'] : ['type','encounterId','choice']);
     uuid(action.encounterId);
     if(!['pay','drop','run','fight'].includes(action.choice)) throw invalid('Invalid encounter choice.');
+    if(tactical && (!['defensive','balanced','aggressive'].includes(action.posture) || typeof action.protectCargo!=='boolean' ||
+      !Number.isInteger(action.retreatHullPercent) || action.retreatHullPercent<0 || action.retreatHullPercent>100)) throw invalid('Invalid battle setup.');
     if(action.choice==='drop') {
       if(!Array.isArray(action.cargoSelection) || action.cargoSelection.length<1 || action.cargoSelection.length>6) throw invalid('Invalid cargo selection.');
       const ids=new Set();
@@ -79,7 +83,9 @@ function expeditionActionInput(action) {
     exactObject(action,['type','method']);
     if(action.method!=='agreement') throw invalid('Invalid relay method.');
   }
-  return structuredClone(action);
+  const parsed=structuredClone(action);
+  if(Object.hasOwn(parsed,'encounterId')) parsed.encounterId=uuid(parsed.encounterId);
+  return parsed;
 }
 
 export function commandInput(body) {

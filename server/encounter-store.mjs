@@ -1,4 +1,5 @@
 import { ApiError, uuid } from './errors.mjs';
+import {isDeepStrictEqual} from 'node:util';
 
 const changed=()=>new ApiError('ENCOUNTER_CHANGED','This encounter is not available for that company.',409);
 const bounded=(value,max)=> {
@@ -10,6 +11,10 @@ export async function loadEncounter(client,companyId,id,{lock=false}={}) {
   const {rows:[row]}=await client.query(`select * from frontierdom.encounters where company_id=$1 and id=$2${lock?' for update':''}`,[uuid(companyId),uuid(id)]);
   if(!row) throw changed();
   return decode(row);
+}
+
+export async function companyEncounter(client,companyId) {
+  return decode((await client.query('select * from frontierdom.encounters where company_id=$1',[uuid(companyId)])).rows[0]);
 }
 
 // Caller already holds the company row lock in the command's transaction.
@@ -25,12 +30,13 @@ export async function freezeEncounter(client,{id,companyId,departureCommandId,so
   return decode(row);
 }
 
-export async function continueEncounter(client,previous,{status,choice,tick,schedule,continuation,result=null}) {
+export async function continueEncounter(client,previous,{status,choice,tick,schedule,continuation,result=null,battleInput=previous.battle_input}) {
   if(previous.status==='resolved') throw changed();
   if(!['active','resolved'].includes(status) || !['pay','drop','run','fight'].includes(choice) ||
      (previous.choice && previous.choice!==choice) || !Number.isSafeInteger(tick) || tick<previous.tick || tick>180 ||
      !Array.isArray(schedule) || schedule.length>8 || schedule.length<previous.schedule.length ||
-     JSON.stringify(schedule.slice(0,previous.schedule.length))!==JSON.stringify(previous.schedule) ||
+     !isDeepStrictEqual(schedule.slice(0,previous.schedule.length),previous.schedule) ||
+     (previous.battle_input!==null && !isDeepStrictEqual(previous.battle_input,battleInput)) ||
      (status==='resolved')!==(result!==null)) throw new Error('Invalid encounter continuation.');
   if(schedule.length-previous.schedule.length>1 || (status==='active' && continuation===null)) throw new Error('Invalid battle continuation.');
   for(const command of schedule) {
@@ -39,11 +45,11 @@ export async function continueEncounter(client,previous,{status,choice,tick,sche
       (command.type==='posture' && !['defensive','balanced','aggressive'].includes(command.posture))) throw new Error('Invalid accepted battle schedule.');
   }
   if(schedule.slice(previous.schedule.length).some(command=>command.tick!==previous.tick+1 || command.tick>tick)) throw new Error('Battle commands must be stamped at the next simulation tick.');
-  bounded(schedule,3000);bounded(continuation,190000);bounded(result,24000);
+  bounded(schedule,3000);bounded(continuation,240000);bounded(result,24000);bounded(battleInput,24000);
   const {rows:[row]}=await client.query(`update frontierdom.encounters set
-    status=$3,choice=$4,tick=$5,schedule=$6,continuation=$7,result=$8
-    where company_id=$1 and id=$2 and status=$9 and tick=$10 returning *`,
-  [previous.company_id,previous.id,status,choice,tick,JSON.stringify(schedule),continuation,result,previous.status,previous.tick]);
+    status=$3,choice=$4,tick=$5,schedule=$6,continuation=$7,result=$8,battle_input=$9
+    where company_id=$1 and id=$2 and status=$10 and tick=$11 returning *`,
+  [previous.company_id,previous.id,status,choice,tick,JSON.stringify(schedule),continuation,result,battleInput,previous.status,previous.tick]);
   if(!row) throw changed();
   return decode(row);
 }

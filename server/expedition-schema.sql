@@ -9,6 +9,7 @@ create table if not exists frontierdom.encounters (
   frozen_input jsonb not null check(jsonb_typeof(frozen_input)='object' and octet_length(frozen_input::text)<=32768),
   status text not null check(status in ('awaiting_choice','active','resolved')),
   choice text check(choice in ('pay','drop','run','fight')),
+  battle_input jsonb check(jsonb_typeof(battle_input)='object' and octet_length(battle_input::text)<=32768),
   tick integer not null default 0 check(tick between 0 and 180),
   schedule jsonb not null default '[]' check(jsonb_typeof(schedule)='array' and jsonb_array_length(schedule)<=8 and octet_length(schedule::text)<=4096),
   continuation jsonb check(jsonb_typeof(continuation)='object' and octet_length(continuation::text)<=262144),
@@ -16,6 +17,9 @@ create table if not exists frontierdom.encounters (
   check((status='resolved')=(result is not null)),
   unique(company_id,departure_command_id)
 );
+-- Supports an isolated database that applied the earlier noncombat foundation.
+alter table frontierdom.encounters add column if not exists battle_input jsonb
+  check(jsonb_typeof(battle_input)='object' and octet_length(battle_input::text)<=32768);
 alter table frontierdom.encounters enable row level security;
 alter table frontierdom.encounters force row level security;
 revoke all on frontierdom.encounters from public,anon,authenticated,service_role;

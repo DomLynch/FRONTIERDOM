@@ -52,7 +52,7 @@ test('encounter write rolls back with failed ledger/state transaction and cannot
   const row=await transaction(pool,client=>freezeEncounter(client,frozen));
   const base={status:'active',choice:'run',tick:1,schedule:[],continuation:{tick:1}};
   for(const change of [{tick:181},{schedule:[{tick:2,type:'retreat'}]},
-    {schedule:Array.from({length:9},()=>({tick:1,type:'retreat'}))},{continuation:{text:'x'.repeat(190001)}}]) {
+    {schedule:Array.from({length:9},()=>({tick:1,type:'retreat'}))},{continuation:{text:'x'.repeat(240001)}}]) {
     await assert.rejects(continueEncounter(pool,row,{...base,...change}));
     assert.deepEqual(await loadEncounter(pool,owner,frozen.id),row);
   }

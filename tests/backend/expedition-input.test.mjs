@@ -10,8 +10,8 @@ test('B actions require explicit opt-in and reject authority, simulation time an
   const actions=[{type:'enroll_expedition'},
     {type:'encounter_choice',encounterId:id,choice:'pay'},
     {type:'encounter_choice',encounterId:id,choice:'drop',cargoSelection:[{commodityId:'medicine',quantity:4}]},
-    {type:'encounter_choice',encounterId:id,choice:'run'},
-    {type:'encounter_choice',encounterId:id,choice:'fight'},
+    {type:'encounter_choice',encounterId:id,choice:'run',posture:'balanced',protectCargo:true,retreatHullPercent:40},
+    {type:'encounter_choice',encounterId:id,choice:'fight',posture:'aggressive',protectCargo:false,retreatHullPercent:0},
     {type:'battle_advance',encounterId:id,ticks:180},
     {type:'battle_advance',encounterId:id,ticks:1,command:{type:'posture',posture:'defensive'}},
     {type:'repair',points:25},{type:'buy_upgrade',upgradeId:'cargo-bracing'},
@@ -32,6 +32,7 @@ test('B actions require explicit opt-in and reject authority, simulation time an
     {type:'encounter_choice',encounterId:id,choice:'pay',cargoSelection:[]},
     {type:'repair',points:0.5},{type:'secure_relay',method:'combat'}];
   for(const action of bad) assert.throws(()=>parse(action),error=>error.code==='INVALID_REQUEST');
+  assert.equal(parse({type:'encounter_choice',encounterId:id.toUpperCase(),choice:'pay'}).encounterId,id);
 });
 
 test('pending crossing rejects unrelated changes and quotes cannot cross encounter/version boundaries',()=>{
