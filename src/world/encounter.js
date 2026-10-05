@@ -9,6 +9,7 @@ export function createEncounterView() {
       }
       const reset = company !== companyId || id !== projection.id;
       if (!reset && projection.tick < tick) return { snapshot, events: [], reset: false };
+      if (reset) sequence = -1;
       const events = (projection.events ?? []).filter(e => Number.isInteger(e.sequence));
       const nextSequence = Math.max(sequence, (projection.cursor?.to ?? 0) - 1, ...events.map(e => e.sequence));
       const fresh = reset ? [] : events.filter(e => e.sequence > sequence);

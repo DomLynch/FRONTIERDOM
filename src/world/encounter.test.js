@@ -14,6 +14,7 @@ test('company switch, cleared session and changed encounter cannot replay old co
  view.accept(p,'A');assert.equal(view.accept(p,'B').events.length,0);
  assert.equal(view.accept(null,null).snapshot,null);assert.equal(view.accept(p,'A').events.length,0);
  assert.equal(view.accept(projection(0,[{sequence:0,type:'approach'}],'new'),'A').events.length,0);
+ assert.equal(view.accept(projection(1,[{sequence:1,type:'weapon'}],'new'),'A').events.length,1);
 });
 test('presentation consumes projections without mutating authoritative inputs',()=>{
  const view=createEncounterView();const p=projection(1,[{sequence:1,type:'hit'}]);const frozen=JSON.stringify(p);
