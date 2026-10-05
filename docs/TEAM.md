@@ -13,6 +13,19 @@ Adapt ARMAGEDOM's ownership and receipts, with a smaller team appropriate to thi
 
 Audit and Deploy can share a chat initially: Lead accepts releases, and Auditor does not judge its own packaging edits. Split later only if actual workload warrants it. No backend lane for this local-save prototype.
 
+## Created chats — 5 October 2026
+
+All six chats are in the FRONTIERDOM custom sidebar section. Five developers were created with GPT 6.1 Sol medium and readiness-only prompts; this Strategy chat's requested Astra 6 high setting requires verification in the app selector.
+
+| Lane | Chat ID |
+| --- | --- |
+| Strategy | `01a10bc3-744c-7723-9002-b47c5ea790ec` |
+| Lead | `01a10bcc-c33a-7c12-89a9-ad2f7a35ea43` |
+| Economy & Simulation | `01a10bcc-c52e-7ec0-aa55-a928a49de00f` |
+| Web & UI | `01a10bcc-c7a0-7f20-94b2-4f01f10ac498` |
+| World & Art | `01a10bcc-cb0c-7a80-a047-fca9fd8ac2c4` |
+| Audit & Deploy | `01a10bcc-cfb6-7df3-b76a-cd2a7c617163` |
+
 ## Integration rules
 
 Lead first commits a baseline, defines data contracts and assigns exact paths. Use isolated worktrees when implementations overlap. Default owner boundaries: Lead bootstrap/package and shared schema; simulation `src/sim/`; UI `src/ui/`; World/Art scene/assets; Audit/Deploy release scripts and receipts. These are proposed paths until Lead establishes the actual project layout.
