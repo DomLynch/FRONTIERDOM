@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 test('visible trade journey, profit receipt and recovery of a lost command response', async ({ page }, testInfo) => {
+  // Includes seven real settlements, reload/retry and tall DPR3 software-rendered captures.
+  test.setTimeout(120000);
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');

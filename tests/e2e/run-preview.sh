@@ -39,4 +39,4 @@ for (let n = 0; n < 50; n++) {
 }
 if (!ready) throw new Error('Real API and built-client preview did not become ready; inspect API/preview logs.');
 JS
-npm run test:e2e
+npm run test:e2e -- "$@"
