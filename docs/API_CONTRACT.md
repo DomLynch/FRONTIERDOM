@@ -1,6 +1,6 @@
 # FRONTIERDOM first-route API — v1
 
-5 October 2026. Lead integration contract. One code-first PlayCanvas client; Editor authoring can feed that client later. This document defines interfaces, not a working backend.
+5 October 2026. Lead integration contract. One code-first PlayCanvas client; Editor authoring can feed that client later. This document defines interfaces, not a working backend. Live77948cc implements the trading/auth foundation. [Expedition extension](EXPEDITION_CONTRACT.md) authorizes isolated next-milestone implementation; it is not deployed and cannot activate before its paired UI/gameplay evidence.
 
 ## Ownership and exact paths
 
