@@ -171,7 +171,7 @@ export function createWorld(app) {
     const aspect = canvas.clientWidth / canvas.clientHeight;
     // Frame the whole gate at tall-phone widths; preserve a readable foreground ship.
     if (battle.active) {
-      if (aspect < 0.85) { camera.setPosition(0, 24, 58); aim.set(0, 7, -5); }
+      if (aspect < 0.85) { camera.setPosition(0, 24, 58); aim.set(0, -4, -5); }
       else { camera.setPosition(16, 22, 42); aim.set(-2, 4, -5); }
     } else if (aspect < 0.85) { camera.setPosition(10, 16, 72); aim.set(1, 3, -14); }
     else { camera.setPosition(22, 13, 30); aim.set(0, 4, -10); }
