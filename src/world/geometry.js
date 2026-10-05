@@ -56,17 +56,35 @@ export function ring(device, radius, thickness, segments = 64, tubeSegments = 8,
 }
 
 export function terrain(device, radius, height, seed = 0) {
-  const positions = [], indices = [];
-  const n = 24;
-  for (let z = 0; z <= n; z++) for (let x = 0; x <= n; x++) {
-    const u = x / n * 2 - 1, v = z / n * 2 - 1;
-    const r = Math.min(1, Math.hypot(u, v));
-    const wave = Math.sin(u * 6 + seed) * Math.cos(v * 5 - seed) * 0.6 + Math.sin(u * 11 + v * 8) * 0.22;
-    positions.push(u * radius, -height * r * r + wave * height * (1 - r), v * radius);
+  // Radial authored island footprint; irregular edges never form a square sheet.
+  const positions = [0, height * 0.15, 0], indices = [];
+  const rings = 12, segments = 64;
+  for (let r = 1; r <= rings; r++) for (let i = 0; i < segments; i++) {
+    const a = i / segments * Math.PI * 2, t = r / rings;
+    const reach = radius * t * (1 + 0.12 * Math.sin(a * 3 + seed) + 0.06 * Math.sin(a * 7));
+    const x = Math.cos(a) * reach, z = Math.sin(a) * reach;
+    const wave = Math.sin(x * 0.14 + seed) * Math.cos(z * 0.15 - seed);
+    positions.push(x, -height * t * t + wave * height * (1 - t) * 0.5, z);
+    const current = 1 + (r - 1) * segments + i, next = 1 + (r - 1) * segments + (i + 1) % segments;
+    if (r === 1) indices.push(0, next, current);
+    else {
+      const inner = current - segments, innerNext = next - segments;
+      indices.push(inner, next, current, inner, innerNext, next);
+    }
   }
-  for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) {
-    const a = z * (n + 1) + x, b = a + n + 1;
-    indices.push(a, b, a + 1, a + 1, b, b + 1);
+  return meshFromTriangles(device, positions, indices);
+}
+
+export function growth(device, height, radius, bend = 1) {
+  const positions = [], indices = [], segments = 12, levels = 10;
+  for (let j = 0; j <= levels; j++) for (let i = 0; i <= segments; i++) {
+    const t = j / levels, a = i / segments * Math.PI * 2;
+    const r = radius * (1 - t * 0.7) * (1 + 0.08 * Math.sin(a * 3 + t * 6));
+    positions.push(Math.cos(a) * r + Math.sin(t * 2.5) * bend, t * height, Math.sin(a) * r + Math.sin(t * 4) * bend * 0.6);
+  }
+  for (let j = 0; j < levels; j++) for (let i = 0; i < segments; i++) {
+    const a = j * (segments + 1) + i, b = a + segments + 1;
+    indices.push(a, a + 1, b, a + 1, b + 1, b);
   }
   return meshFromTriangles(device, positions, indices);
 }

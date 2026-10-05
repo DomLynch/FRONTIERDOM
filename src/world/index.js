@@ -1,5 +1,5 @@
 import { Entity, Color, Vec3, StandardMaterial, Texture, FILTER_LINEAR, ADDRESS_CLAMP_TO_EDGE, TONEMAP_ACES, CULLFACE_NONE, BLEND_NORMAL } from 'playcanvas';
-import { loft, ring, terrain, attachMesh, meshFromTriangles } from './geometry.js';
+import { loft, ring, terrain, growth, attachMesh, meshFromTriangles } from './geometry.js';
 import { createTransit } from './transit.js';
 
 /** One caller-owned Application. All simulation/state resolution stays outside the renderer. */
@@ -74,7 +74,7 @@ export function createWorld(app) {
   const eden = root('Eden living valley');
   const earthSurface = material('Earth ocean and atmosphere', [0.9, 0.94, 1]); earthSurface.diffuseMap = planetMap(false); earthSurface.update();
   const edenSurface = material('Eden living world', [0.8, 0.92, 0.85]); edenSurface.diffuseMap = planetMap(true); edenSurface.update();
-  primitive(earth, 'Earth horizon', 'sphere', [-33, -9, -110], [150, 150, 150], earthSurface, [8, 24, -20]);
+  primitive(earth, 'Earth horizon', 'sphere', [-35, -10, -110], [112, 112, 112], earthSurface, [8, 24, -20]);
   primitive(eden, 'Eden distant moon', 'sphere', [-45, 29, -130], [60, 60, 60], edenSurface, [0, -40, 0]);
 
   // One batched star mesh with deterministic positions.
@@ -151,8 +151,9 @@ export function createWorld(app) {
   for (let i = 0; i < 9; i++) {
     const x = (i % 2 ? 1 : -1) * (12 + i % 3 * 6), z = -8 - i * 6;
     const height = 10 + i % 3 * 5;
-    primitive(eden, 'Living stone root', 'cone', [x, height / 2 - 4, z], [3 + i % 3, height, 3 + i % 3], mineral, [0, i * 29, i % 2 ? 8 : -7]);
-    primitive(eden, 'Floating canopy', 'sphere', [x, height - 3, z], [9 + i % 3 * 2, 2.2, 7], jade);
+    custom(eden, 'Curved living root', growth(device, height - 1, 1.1 + i % 3 * 0.3, i % 2 ? 2.2 : -1.5), [x, -4, z], mineral);
+    custom(eden, 'Aurelia root vein', growth(device, height - 0.5, 0.05, i % 2 ? 2.2 : -1.5), [x + 0.85, -4, z + 0.5], aqua);
+    primitive(eden, 'Floating canopy', 'sphere', [x, height - 3, z], [9 + i % 3 * 2, 3.4, 7], jade);
     custom(eden, 'Canopy luminous gills', ring(device, 3.9 + i % 3, 0.08, 32), [x, height - 3.6, z], violet, [90, 0, 0]);
   }
   const veil = material('Transit halo', [0.23, 0.68, 0.76], 0, 1.3); veil.useLighting = false; veil.blendType = BLEND_NORMAL; veil.opacity = 0.14; veil.depthWrite = false; veil.update();
@@ -165,7 +166,7 @@ export function createWorld(app) {
     if (disposed || lost || !canvas.clientWidth || !canvas.clientHeight) return;
     const aspect = canvas.clientWidth / canvas.clientHeight;
     // Frame the whole gate at tall-phone widths; preserve a readable foreground ship.
-    if (aspect < 0.85) { camera.setPosition(22, 16, 47); aim.set(0, 5, -10); }
+    if (aspect < 0.85) { camera.setPosition(16, 14, 62); aim.set(0, 5, -14); }
     else { camera.setPosition(22, 13, 30); aim.set(0, 4, -10); }
     camera.lookAt(aim);
   }
