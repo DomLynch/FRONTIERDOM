@@ -1,4 +1,4 @@
-# Proposed Node entrypoint; Lead/Backend must confirm before installation.
+# Install only after database decision and accepted candidate.
 [Unit]
 Description=FRONTIERDOM authoritative API
 After=network.target
@@ -10,8 +10,9 @@ Group=frontierdom
 WorkingDirectory=/var/www/frontierdom/current
 Environment=HOST=127.0.0.1
 Environment=PORT=3097
-Environment=FD_DATA_DIR=/srv/frontierdom/shared
-EnvironmentFile=-/etc/frontierdom/api.env
+Environment=NODE_ENV=production
+Environment=TRUST_PROXY=1
+EnvironmentFile=/etc/frontierdom/api.env
 ExecStart=/usr/bin/node /var/www/frontierdom/current/server/server.mjs
 Restart=on-failure
 RestartSec=3
@@ -19,7 +20,6 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/srv/frontierdom/shared
 UMask=0077
 
 [Install]
