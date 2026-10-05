@@ -23,7 +23,10 @@ export function uuid(value) {
   return value.toLowerCase();
 }
 
-export function actionInput(action) {
+export function actionInput(action, { expedition = false } = {}) {
+  if (expedition && ['enroll_expedition','encounter_choice','battle_advance','repair','buy_upgrade','secure_relay'].includes(action?.type)) {
+    return expeditionActionInput(action);
+  }
   if (action?.type === 'travel') {
     exactObject(action, ['type', 'destinationId']);
     if (!['earth', 'eden'].includes(action.destinationId)) throw invalid('Invalid destination.');
@@ -34,6 +37,48 @@ export function actionInput(action) {
       throw invalid('Invalid commodity or quantity.');
     }
   } else throw invalid('Unknown action.');
+  return structuredClone(action);
+}
+
+function positive(value,max) { return Number.isSafeInteger(value) && value>0 && value<=max; }
+function commodity(value) { return typeof value==='string' && /^[a-z][a-z0-9-]{0,47}$/.test(value); }
+function expeditionActionInput(action) {
+  if(action.type==='enroll_expedition') exactObject(action,['type']);
+  else if(action.type==='encounter_choice') {
+    exactObject(action,action.choice==='drop' ? ['type','encounterId','choice','cargoSelection'] : ['type','encounterId','choice']);
+    uuid(action.encounterId);
+    if(!['pay','drop','run','fight'].includes(action.choice)) throw invalid('Invalid encounter choice.');
+    if(action.choice==='drop') {
+      if(!Array.isArray(action.cargoSelection) || action.cargoSelection.length<1 || action.cargoSelection.length>6) throw invalid('Invalid cargo selection.');
+      const ids=new Set();
+      for(const item of action.cargoSelection) {
+        exactObject(item,['commodityId','quantity']);
+        if(!commodity(item.commodityId) || !positive(item.quantity,10000) || ids.has(item.commodityId)) throw invalid('Invalid cargo selection.');
+        ids.add(item.commodityId);
+      }
+    }
+  } else if(action.type==='battle_advance') {
+    exactObject(action,Object.hasOwn(action,'command') ? ['type','encounterId','ticks','command'] : ['type','encounterId','ticks']);
+    uuid(action.encounterId);
+    if(!positive(action.ticks,180)) throw invalid('Invalid battle tick count.');
+    if(Object.hasOwn(action,'command')) {
+      const command=action.command;
+      if(command?.type==='retreat') exactObject(command,['type']);
+      else if(command?.type==='posture') {
+        exactObject(command,['type','posture']);
+        if(!['defensive','balanced','aggressive'].includes(command.posture)) throw invalid('Invalid posture.');
+      } else throw invalid('Invalid battle command.');
+    }
+  } else if(action.type==='repair') {
+    exactObject(action,['type','points']);
+    if(!positive(action.points,100)) throw invalid('Invalid repair points.');
+  } else if(action.type==='buy_upgrade') {
+    exactObject(action,['type','upgradeId']);
+    if(action.upgradeId!=='cargo-bracing') throw invalid('Invalid upgrade.');
+  } else if(action.type==='secure_relay') {
+    exactObject(action,['type','method']);
+    if(action.method!=='agreement') throw invalid('Invalid relay method.');
+  }
   return structuredClone(action);
 }
 
