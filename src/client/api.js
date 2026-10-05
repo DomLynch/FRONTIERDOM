@@ -11,7 +11,7 @@ export class ApiError extends Error {
 }
 
 export function createApi({ fetchImpl = globalThis.fetch } = {}) {
-  async function request(path, body) {
+  async function request(path, body, expectedCompanyId) {
     const isCommand = path === 'commands';
     const failure = (status, error, uncertain = false) => new ApiError(status, error, {
       outcomeUnknown: isCommand && uncertain, commandId: isCommand ? body.commandId : undefined
@@ -24,7 +24,8 @@ export function createApi({ fetchImpl = globalThis.fetch } = {}) {
         method: body === undefined ? 'GET' : 'POST',
         credentials: 'same-origin', cache: 'no-store',
         headers: body === undefined ? { Accept: 'application/json' } : {
-          Accept: 'application/json', 'Content-Type': 'application/json'
+          Accept: 'application/json', 'Content-Type': 'application/json',
+          ...(expectedCompanyId === undefined ? {} : { 'X-Frontierdom-Company-Id': expectedCompanyId })
         },
         ...(body === undefined ? {} : { body: serialized })
       });
@@ -42,7 +43,7 @@ export function createApi({ fetchImpl = globalThis.fetch } = {}) {
         throw failure(response.status, { message: 'API returned an invalid error response.' }, true);
       }
       // A proxy/server failure can occur after commit, even with a JSON error envelope.
-      throw failure(response.status, data.error, response.status >= 500);
+      throw failure(response.status, data.error, response.status >= 500 || (isCommand && data.error.code === 'ACCOUNT_CHANGED'));
     }
     if (isCommand && (data.commandId !== body.commandId || !data.state || !data.receipt
       || !Number.isSafeInteger(data.state.revision) || typeof data.replayed !== 'boolean')) {
@@ -69,6 +70,6 @@ export function createApi({ fetchImpl = globalThis.fetch } = {}) {
     state: () => request('state'),
     quote: (action) => request('quotes', { action }),
     // Caller retains this exact object and commandId until outcome is known.
-    command: (command) => request('commands', command)
+    command: (command, { expectedCompanyId } = {}) => request('commands', command, expectedCompanyId)
   };
 }

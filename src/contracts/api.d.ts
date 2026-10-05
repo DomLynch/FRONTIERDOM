@@ -28,5 +28,5 @@ export interface Api {
   session(): Promise<StateResponse>;
   state(): Promise<StateResponse>;
   quote(action: Action): Promise<QuoteResponse>;
-  command(command: Command): Promise<CommandResponse>;
+  command(command: Command, options?: { expectedCompanyId: string }): Promise<CommandResponse>;
 }

@@ -1,6 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApi, ApiError } from '../../src/client/api.js';
+
+test('company precondition preserves exact payload and account-change outcome uncertainty', async () => {
+  const original = { commandId: 'command-A', quoteId: 'quote-A', expectedRevision: 2 };
+  let sent;
+  const api = createApi({ fetchImpl: async (url, options) => {
+    sent = { url, options };
+    return Response.json({ apiVersion: 1, error: { code: 'ACCOUNT_CHANGED', message: 'Sign into the original account.', retryable: false } }, { status: 409 });
+  } });
+  await assert.rejects(api.command(original, { expectedCompanyId: 'company-A' }), error =>
+    error.code === 'ACCOUNT_CHANGED' && error.outcomeUnknown && error.retryable && error.commandId === original.commandId);
+  assert.equal(sent.url, '/api/v1/commands');
+  assert.equal(sent.options.headers['X-Frontierdom-Company-Id'], 'company-A');
+  assert.equal(sent.options.body, JSON.stringify(original));
+  assert.deepEqual(original, { commandId: 'command-A', quoteId: 'quote-A', expectedRevision: 2 });
+});
 const command = { commandId: 'original-id', quoteId: 'quote-id', expectedRevision: 0 };
 const reply = { apiVersion: 1, commandId: command.commandId, state: { revision: 1 }, receipt: { id: 'receipt-id' }, replayed: false };
 
