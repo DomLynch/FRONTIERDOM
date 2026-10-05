@@ -129,7 +129,8 @@ test('run/fight fees commit once and block a second choice until accepted Combat
     assert.deepEqual(result.state.ship.cargo, state.ship.cargo);
     assert.equal(result.state.locationId, 'eden');
     rejects(result.state, choose(state, choice), 'STALE_STATE');
-    rejects(result.state, { type: 'battle_advance', ticks: 180 }, 'INVALID_REQUEST');
+    assert.deepEqual(quoteAction(result.state, { type: 'battle_advance', encounterId: 'encounter-1', ticks: 180 }), { debitPence: 0, creditPence: 0 });
+    assert.throws(() => act(result.state, { type: 'battle_advance', encounterId: 'encounter-1', ticks: 180 }), { code: 'INVALID_REQUEST' });
   }
 });
 

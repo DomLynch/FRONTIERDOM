@@ -1,6 +1,6 @@
 import { fail, integer, safe, add, validateState, removeCargo, arrive, finishCommand, allocatedBasis, signed } from './rules.js';
 
-const TYPES = ['enroll_expedition', 'encounter_choice', 'repair', 'buy_upgrade', 'secure_relay'];
+const TYPES = ['enroll_expedition', 'encounter_choice', 'repair', 'buy_upgrade', 'secure_relay', 'battle_advance'];
 const STATUS = ['unused', 'pending', 'resolved', 'passed_empty'];
 const EXTRA_FINANCES = ['operatingExpensePence', 'cargoWriteOffBasisPence', 'capitalSpendPence'];
 export function isExpeditionAction(action) { return TYPES.includes(action?.type); }
@@ -18,7 +18,7 @@ export function migrateExpeditionState(state) {
   };
   const e = next.expedition;
   if (!e || e.version !== 1 || typeof e.enrolled !== 'boolean' || !STATUS.includes(e.firstReturnStatus)
-    || !integer(e.shipCondition?.hull) || e.shipCondition.hull < 25 || e.shipCondition.hull > 100
+    || !integer(e.shipCondition?.hull) || e.shipCondition.hull > 100
     || e.shipCondition.maxHull !== 100 || !Array.isArray(e.upgrades)
     || e.upgrades.some(id => id !== 'cargo-bracing') || new Set(e.upgrades).size !== e.upgrades.length
     || !['contested', 'secured'].includes(e.relay?.status)
@@ -97,7 +97,7 @@ function validateSelection(state, selection, requiredUnits) {
 function evaluate(state, action) {
   const e = state.expedition;
   if (!isExpeditionAction(action)) fail('INVALID_REQUEST', 'Unknown expedition action.');
-  if (e.pendingJourney && action.type !== 'encounter_choice') fail('INVALID_REQUEST', 'Resolve the pending journey first.');
+  if (e.pendingJourney && !['encounter_choice', 'battle_advance'].includes(action.type)) fail('INVALID_REQUEST', 'Resolve the pending journey first.');
   let debitPence = 0;
   if (action.type === 'enroll_expedition') {
     if (e.enrolled) fail('INVALID_REQUEST', 'Expedition is already enrolled.');
@@ -106,9 +106,14 @@ function evaluate(state, action) {
     if (!pending || action.encounterId !== pending.encounterId) fail('STALE_STATE', 'Encounter is no longer available.');
     if (pending.choice !== null) fail('STALE_STATE', 'The encounter choice is already committed.');
     if (!['pay', 'drop', 'run', 'fight'].includes(action.choice)) fail('INVALID_REQUEST', 'Unknown encounter choice.');
+    if (['run', 'fight'].includes(action.choice) && pending.startingHull < 25) {
+      fail('INVALID_REQUEST', 'Below 25 hull, choose pay/drop and repair after arrival.');
+    }
     if (action.choice === 'drop') validateSelection(state, action.cargoSelection, pending.demands.dropUnits);
     debitPence = action.choice === 'pay' ? pending.demands.payPence
       : action.choice === 'run' ? 6000 : action.choice === 'fight' ? 12000 : 0;
+  } else if (action.type === 'battle_advance') {
+    validateBattleAction(state, action);
   } else if (action.type === 'repair') {
     if (!integer(action.points) || action.points === 0 || action.points > 100 - e.shipCondition.hull) {
       fail('INVALID_REQUEST', 'Choose whole missing hull points.');
@@ -171,10 +176,7 @@ function settleArrival(state) {
   state.expedition.firstReturnStatus = 'resolved';
   arrive(state, 'earth');
 }
-export function applyExpeditionAction(state, action, metadata = {}) {
-  state = migrateExpeditionState(state);
-  const quote = evaluate(state, action);
-  const next = structuredClone(state);
+function applyIntent(next, action, quote) {
   const e = next.expedition;
   const changes = {};
   const details = {};
@@ -206,5 +208,109 @@ export function applyExpeditionAction(state, action, metadata = {}) {
     next.routes = next.routes.map(route => route.from === 'eden' && route.to === 'earth'
       ? { ...route, travelCostPence: returnFare(next) } : route);
   }
+  return { changes, details };
+}
+export function applyExpeditionAction(state, action, metadata = {}) {
+  state = migrateExpeditionState(state);
+  if (action?.type === 'battle_advance') fail('INVALID_REQUEST', 'Use a trusted battle continuation helper.');
+  const quote = evaluate(state, action);
+  const next = structuredClone(state);
+  const { changes, details } = applyIntent(next, action, quote);
   return finishCommand(state, next, action, metadata, changes, details);
+}
+
+function validateBattleAction(state, action) {
+  const pending = state.expedition.pendingJourney;
+  if (!pending || action?.type !== 'battle_advance' || action.encounterId !== pending.encounterId
+    || !['run', 'fight'].includes(pending.choice)) fail('STALE_STATE', 'No matching active battle.');
+  if (!integer(action.ticks) || action.ticks < 1 || action.ticks > 180) fail('INVALID_REQUEST', 'Advance one to 180 ticks.');
+  if (action.command !== undefined) {
+    const c = action.command;
+    if (!c || !['retreat', 'posture'].includes(c.type) || Object.hasOwn(c, 'tick')
+      || (c.type === 'posture' && !['defensive', 'balanced', 'aggressive'].includes(c.posture))) {
+      fail('INVALID_REQUEST', 'The server stamps bounded next-tick commands.');
+    }
+  }
+  return pending;
+}
+function projectCommands(next, metadata) {
+  if (metadata.acceptedCommands === undefined) return;
+  const schedule = metadata.acceptedCommands;
+  const existing = next.expedition.pendingJourney.commands;
+  if (!Array.isArray(schedule) || schedule.length > 8 || schedule.length < existing.length) {
+    fail('INVALID_REQUEST', 'Invalid accepted command schedule.');
+  }
+  let lastTick = 0;
+  const normalized = schedule.map(command => {
+    if (!command || !integer(command.tick) || command.tick < 1 || command.tick > 180
+      || command.tick < lastTick || !['retreat', 'posture'].includes(command.type)
+      || (command.type === 'posture' && !['defensive', 'balanced', 'aggressive'].includes(command.posture))) {
+      fail('INVALID_REQUEST', 'Invalid accepted command schedule.');
+    }
+    lastTick = command.tick;
+    return command.type === 'retreat' ? { tick: command.tick, type: 'retreat' }
+      : { tick: command.tick, type: 'posture', posture: command.posture };
+  });
+  if (existing.some((command, i) => JSON.stringify(command) !== JSON.stringify(normalized[i]))) {
+    fail('STALE_STATE', 'Previously accepted commands cannot change.');
+  }
+  next.expedition.pendingJourney.commands = normalized;
+}
+export function applyBattleProgress(state, action, metadata = {}) {
+  state = migrateExpeditionState(state);
+  validateBattleAction(state, action);
+  const next = structuredClone(state);
+  projectCommands(next, metadata);
+  return finishCommand(state, next, action, metadata, {}, { encounterId: action.encounterId });
+}
+function verifiedLoss(state, result) {
+  const p = state.expedition.pendingJourney;
+  const units = p.initialCargo.reduce((sum, cargo) => add(sum, cargo.quantity), 0);
+  const scenario = result?.scenario;
+  const outcomes = ['boarded', 'victory', 'escaped', 'pirate_escaped', 'both_escaped', 'stalemate'];
+  if (!result || result.version !== 1 || result.seed !== p.seed || !outcomes.includes(result.outcome)
+    || !integer(result.tick) || result.tick > 180 || scenario?.type !== 'opening'
+    || scenario.choice !== p.choice || scenario.playerHullFloor !== 25
+    || scenario.cargoPolicy !== 'boarding_only' || scenario.initialCargoUnits !== units
+    || scenario.crewSafe !== true || !integer(scenario.cargoLostUnits)
+    || result.player?.id !== state.ship.id || result.player.maxHull !== 100
+    || !integer(result.player.hull) || result.player.hull < 25 || result.player.hull > p.startingHull
+    || !integer(result.player.cargoUnits)) fail('INVALID_REQUEST', 'Invalid verified opening result.');
+  const expectedLoss = result.outcome === 'boarded' ? Math.ceil(units / (p.choice === 'run' ? 4 : 2)) : 0;
+  if (scenario.cargoLostUnits !== expectedLoss || result.player.cargoUnits !== units - expectedLoss
+    || (result.outcome === 'boarded' && (result.player.hull !== 25 || result.reason !== 'hull_floor'))
+    || (result.tick === 0 && (p.startingHull !== 25 || result.outcome !== 'boarded'))) {
+    fail('INVALID_REQUEST', 'Opening result contradicts its frozen consequence.');
+  }
+  const ordered = cargo => [...cargo].sort((a, b) => a.commodityId < b.commodityId ? -1 : a.commodityId > b.commodityId ? 1 : 0);
+  if (JSON.stringify(ordered(state.ship.cargo)) !== JSON.stringify(ordered(p.initialCargo))) {
+    fail('STALE_STATE', 'Battle cargo differs from the frozen departure.');
+  }
+  let remaining = expectedLoss;
+  return ordered(state.ship.cargo).flatMap(cargo => {
+    const quantity = Math.min(cargo.quantity, remaining);
+    remaining -= quantity;
+    return quantity ? [{ commodityId: cargo.commodityId, quantity }] : [];
+  });
+}
+// Only Backend calls this with a terminal result produced by the frozen Combat module.
+// Result shape checks are economic invariants, not proof that arbitrary client JSON is trusted.
+export function applyBattleSettlement(state, action, verifiedResult, metadata = {}) {
+  state = migrateExpeditionState(state);
+  const next = structuredClone(state);
+  let changes = {};
+  if (action?.type === 'encounter_choice' && ['run', 'fight'].includes(action.choice)) {
+    // createBattle may board at tick0. Commit choice fee + result as one command/receipt.
+    const quote = evaluate(state, action);
+    ({ changes } = applyIntent(next, action, quote));
+    if (verifiedResult?.tick !== 0) fail('INVALID_REQUEST', 'Only immediate tick-zero results settle with a choice.');
+  } else validateBattleAction(state, action);
+  projectCommands(next, metadata);
+  const selection = verifiedLoss(next, verifiedResult);
+  changes.cargoWriteOffBasisPence = removeCargo(next, selection);
+  next.expedition.shipCondition.hull = verifiedResult.player.hull;
+  const encounterId = next.expedition.pendingJourney.encounterId;
+  settleArrival(next);
+  return finishCommand(state, next, action, metadata, changes,
+    { encounterId, battleOutcome: verifiedResult.outcome, battleTick: verifiedResult.tick });
 }

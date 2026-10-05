@@ -4,7 +4,7 @@ import { GOODS, LOCATIONS, fail, integer, safe, add, emptyTotals, refreshPrices,
 import { migrateExpeditionState, isExpeditionAction, quoteExpeditionAction,
   applyExpeditionAction, returnFare, beginTravel } from './expedition.js';
 export { EconomyError } from './rules.js';
-export { migrateExpeditionState, quoteExpeditionAction, describeExpeditionAction, applyExpeditionAction } from './expedition.js';
+export { migrateExpeditionState, quoteExpeditionAction, describeExpeditionAction, applyExpeditionAction, applyBattleProgress, applyBattleSettlement } from './expedition.js';
 
 export function createInitialState(companyId) {
   if (typeof companyId !== 'string' || !companyId.trim()) fail('INVALID_REQUEST', 'Company ID is required.');
