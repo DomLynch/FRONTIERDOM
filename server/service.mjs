@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { transaction } from './database.mjs';
-import { ApiError, actionInput, commandInput, exactObject } from './errors.mjs';
+import { ApiError, actionInput, commandInput, exactObject, uuid } from './errors.mjs';
 
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
 const QUOTE_SECONDS = 60;
@@ -37,6 +37,7 @@ function rules(run) {
 }
 
 export function createService(pool, economy) {
+  const runTransaction = (client, run) => client ? run(client) : transaction(pool, run);
   return {
     async session(token, body) {
       exactObject(body, []);
@@ -62,15 +63,38 @@ export function createService(pool, economy) {
       });
     },
 
-    async state(token) {
-      const row = await company(pool, token);
+    async accountSession(token, user, body, client) {
+      exactObject(body, []);
+      const userId = uuid(user.id);
+      // Called only inside Auth's verified, locked account-session transaction.
+      const { rows: [account] } = await client.query(`select auth_user_id, expires_at from frontierdom.account_sessions
+        where token_hash=$1 and expires_at>clock_timestamp() for update`, [checkedToken(token)]);
+      if (!account || account.auth_user_id !== userId) throw unauthorized();
+      await client.query('select pg_advisory_xact_lock(617349021)');
+      let { rows: [row] } = await client.query('select id,state from frontierdom.companies where auth_user_id=$1', [userId]);
+      if (!row) {
+        const { rows: [count] } = await client.query('select count(*)::int as count from frontierdom.companies');
+        if (count.count >= MAX_COMPANIES) fail('RATE_LIMITED', 'Prototype company capacity reached.', 429);
+        const id = randomUUID();
+        const state = rules(() => economy.createInitialState(id));
+        await client.query('insert into frontierdom.companies(id,state,auth_user_id) values($1,$2,$3)', [id, state, userId]);
+        row = { id, state };
+      }
+      await client.query(`insert into frontierdom.sessions(token_hash,company_id,expires_at) values($1,$2,$3)
+        on conflict(token_hash) do update set expires_at=excluded.expires_at
+        where frontierdom.sessions.company_id=excluded.company_id`, [checkedToken(token), row.id, account.expires_at]);
       return { apiVersion: 1, state: row.state };
     },
 
-    async quote(token, body) {
+    async state(token, client = pool) {
+      const row = await company(client, token);
+      return { apiVersion: 1, state: row.state };
+    },
+
+    async quote(token, body, existingClient) {
       exactObject(body, ['action']);
       const action = actionInput(body.action);
-      return transaction(pool, async client => {
+      return runTransaction(existingClient, async client => {
         const row = await company(client, token, true);
         const prices = rules(() => economy.quoteAction(row.state, action));
         const { rows: [clock] } = await client.query('select clock_timestamp() as now');
@@ -88,10 +112,13 @@ export function createService(pool, economy) {
       });
     },
 
-    async command(token, body) {
+    async command(token, body, existingClient, expectedCompanyId) {
       const payload = commandInput(body);
-      return transaction(pool, async client => {
+      return runTransaction(existingClient, async client => {
         const row = await company(client, token, true);
+        if(expectedCompanyId!==undefined && expectedCompanyId!==row.id) {
+          fail('ACCOUNT_CHANGED','This pending command belongs to another company. Sign back into the original account to recover it.');
+        }
         // Serialize even different IDs against the same company. Receipts and
         // original snapshots are committed with state, so lost responses replay.
         const { rows: [previous] } = await client.query(`select response, payload = $3::jsonb as matches

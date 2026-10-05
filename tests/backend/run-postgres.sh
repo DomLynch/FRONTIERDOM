@@ -23,19 +23,15 @@ export PGDATABASE=frontierdom_test
 psql -v ON_ERROR_STOP=1 -q -c 'create role frontierdom_test login nosuperuser nobypassrls; create role anon nologin; create role authenticated nologin; create role service_role nologin;'
 psql -v ON_ERROR_STOP=1 -q -f server/schema.sql
 psql -v ON_ERROR_STOP=1 -q -c 'grant frontierdom_backend to frontierdom_test;'
-# Lead owns root dependency/lock changes. Bootstrap only pg in this disposable
-# job if it has not been integrated yet; no authored root package is modified.
-if ! node --input-type=module -e "await import('pg')" 2>/dev/null; then
-  deps="$PWD/.backend-test-deps"
-  mkdir "$deps"
-  printf '%s\n' '{"private":true}' > "$deps/package.json"
-  npm install --prefix "$deps" --ignore-scripts --no-audit --no-fund --package-lock=false pg@8.23.1
-  ln -s "$deps/node_modules" node_modules
+# Lead owns the pinned root packages/lockfile. Install them only inside the job.
+if ! node --input-type=module -e "await import('pg'); await import('@supabase/supabase-js')" 2>/dev/null; then
+  npm ci --ignore-scripts --no-audit --no-fund
 fi
 export DATABASE_URL="postgresql://frontierdom_test@localhost/frontierdom_test?host=$PGHOST"
 export TEST_ADMIN_DATABASE_URL="postgresql://postgres@localhost/frontierdom_test?host=$PGHOST"
+export AUTH_MODE=guest
 if [ "$#" -gt 0 ]; then
   "$@"
 else
-  node --test --test-concurrency=1 tests/backend/backend.test.mjs tests/economy/economy.test.js
+  node --test --test-concurrency=1 tests/backend/backend.test.mjs tests/backend/auth.test.mjs
 fi

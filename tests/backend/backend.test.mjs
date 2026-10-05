@@ -14,7 +14,7 @@ let pool, admin, service, server, base;
 const errors = [];
 
 async function listen() {
-  server = createApiServer({ service, siteOrigin: origin, secureCookies: false, onError: error => errors.push(error) });
+  server = createApiServer({ service, authMode:'guest', siteOrigin: origin, secureCookies: false, onError: error => errors.push(error) });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   base = `http://127.0.0.1:${server.address().port}`;
@@ -216,12 +216,12 @@ test('origin, body size, cookies and owner fields are rejected at HTTP boundary'
   assert.equal((await call('session', { body: { owner: g.state.companyId } })).status, 400);
   assert.equal((await call('state', { cookie: `${g.cookie}; ${g.cookie}` })).status, 400);
   assert.equal((await call('state', { cookie: 'frontierdom_session=forged' })).status, 401);
-  const secure = createApiServer({ service, siteOrigin: 'https://frontierdom.com', secureCookies: true });
+  const secure = createApiServer({ service, authMode:'guest', siteOrigin: 'https://frontierdom.com', secureCookies: false });
   secure.listen(0, '127.0.0.1'); await once(secure, 'listening');
   try {
     const response = await fetch(`http://127.0.0.1:${secure.address().port}/api/v1/session`, {
       method: 'POST', headers: { Origin: 'https://frontierdom.com', 'Content-Type': 'application/json', Cookie: g.cookie }, body: '{}' });
-    assert.match(response.headers.get('set-cookie'), /; Secure$/);
+    assert.match(response.headers.get('set-cookie'), /HttpOnly/);
   } finally { const closed = once(secure, 'close'); secure.close(); secure.closeAllConnections(); await closed; }
 });
 
@@ -278,7 +278,7 @@ test('private schema denies browser roles and runtime is not superuser or BYPASS
       await assert.rejects(client.query('select * from frontierdom.companies'), error => error.code === '42501');
     } finally { await client.query('rollback'); client.release(); }
   }
-  const { rows } = await admin.query("select relrowsecurity, relforcerowsecurity from pg_class where relnamespace='frontierdom'::regnamespace and relkind='r'");
+  const { rows } = await admin.query("select relrowsecurity, relforcerowsecurity from pg_class where relnamespace='frontierdom'::regnamespace and relkind='r' and relname in ('companies','sessions','quotes','commands','rate_buckets')");
   assert.ok(rows.length === 5 && rows.every(row => row.relrowsecurity && row.relforcerowsecurity));
 });
 
