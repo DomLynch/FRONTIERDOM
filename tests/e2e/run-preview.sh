@@ -17,7 +17,7 @@ export SITE_ORIGIN="http://127.0.0.1:$FRONTIERDOM_PREVIEW_PORT"
 export FRONTIERDOM_TEST_URL="$SITE_ORIGIN"
 export NODE_ENV=development TRUST_PROXY=0
 # Production HTTPS/Secure-cookie and packaging checks remain separate acceptance gates.
-node server/server.mjs > artifacts/e2e/api.log 2>&1 &
+node "${FRONTIERDOM_SERVER_ENTRY:-server/server.mjs}" > artifacts/e2e/api.log 2>&1 &
 api_pid=$!
 node tests/e2e/preview-server.mjs > artifacts/e2e/preview.log 2>&1 &
 preview_pid=$!
