@@ -154,10 +154,11 @@ try {
   const layout=async()=>{
     const result=await page.evaluate(()=>{
       const next=document.querySelector('[data-action="next"]')?.getBoundingClientRect();
+      const nav=document.querySelector('.fd-nav').getBoundingClientRect();
       const world=document.querySelector('.fd-world-window').getBoundingClientRect();
-      return {overflow:document.documentElement.scrollWidth>innerWidth+1,nextVisible:!next||(next.bottom<=innerHeight&&next.left>=0&&next.right<=innerWidth),worldHeight:world.height,height:innerHeight};
+      return {overflow:document.documentElement.scrollWidth>innerWidth+1,nextVisible:!next||(next.bottom<=innerHeight&&next.left>=0&&next.right<=innerWidth),navVisible:nav.bottom<=innerHeight&&nav.left>=0&&nav.right<=innerWidth,worldHeight:world.height,height:innerHeight};
     });
-    assert.equal(result.overflow,false);assert.equal(result.nextVisible,true);
+    assert.equal(result.overflow,false);assert.equal(result.nextVisible,true);assert.equal(result.navVisible,true);
     if(result.height>600)assert.ok(result.worldHeight>=result.height*.3,'at least 30% portrait clear world');
   };
   await page.goto(uiOrigin);await page.waitForSelector('[data-action="next"]:enabled');
