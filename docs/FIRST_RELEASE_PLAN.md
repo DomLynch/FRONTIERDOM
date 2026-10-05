@@ -16,7 +16,7 @@ Use one code-first PlayCanvas Engine client in Git, with DOM trading UI and a sa
 
 1. Lead: bootstrap, pinned packages/lock, API contract and client integration. Commit the contract before Backend/UI consume it.
 2. Economy: concrete prices, capacities, travel costs and a worked viable round trip; Backend implements the accepted rules once.
-3. Backend: isolated persistent state, bounded session/API inputs, atomic trades and travel, idempotency and ownership. Dedicated Supabase project organization/cost is pending owner choice; existing VPS database is an alternative only if chosen. No other game's database is used.
+3. Backend: isolated persistent state, bounded session/API inputs, atomic trades and travel, idempotency and ownership. Owner chose dedicated Supabase project eyfojjzajbfliuokaplx in Global-Digital-Assets's Org on Free ($0/month). No other game's database is used.
 4. Web/UI: mobile market/cargo/route/receipt flow, loading/retry/error states and responsive polish against the contract.
 5. World/Art: lightweight procedural PlayCanvas freighter and Earth/Eden scene. No paid assets or heavy local jobs.
 6. Lead: integrate lane commits, run focused tests/build and complete recorded browser round trip through the actual API on VPS.
