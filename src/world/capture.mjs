@@ -55,9 +55,9 @@ try {
  await page.locator('button[data-action="travel"]').click();
  await page.locator('button[data-action="confirm"]').click();
  await page.waitForTimeout(100);await page.screenshot({path:`${outputs}/transit-confirmed-eden.png`});
- await page.waitForTimeout(2200);await page.screenshot({path:`${outputs}/transit-settled-eden.png`});
+ await page.waitForTimeout(18000);await page.screenshot({path:`${outputs}/transit-settled-eden.png`});
  await page.reload({waitUntil:'networkidle'});await page.waitForTimeout(400);await page.screenshot({path:`${outputs}/transit-reloaded-eden.png`});
  await context.close();
  if(errors.length)throw new Error(errors.join('\n'));
- await writeFile(`${outputs}/receipt.json`,JSON.stringify({entryPoint:'built candidate src/main.js',engine:'2.23.0',snapshots:'test-only intercepted authoritative-shape fixtures; no live API/gameplay claim',viewports:[[390,844],[1280,720]],reducedMotion:true,pageErrors:errors,transit:'fixture transport through real UI quote/command and accepted state; initial/crossing/settled/reloaded frames retained'},null,2));
+ await writeFile(`${outputs}/receipt.json`,JSON.stringify({entryPoint:'built candidate src/main.js',engine:'2.23.0',snapshots:'test-only intercepted authoritative-shape fixtures; no live API/gameplay claim',viewports:[[390,844],[1280,720]],reducedMotion:'reduce for composed frames; no-preference for transit frames',pageErrors:errors,transit:'fixture transport through real UI quote/command and accepted state; initial/crossing/settled/reloaded frames retained'},null,2));
 }finally{await browser?.close();server.kill('SIGTERM');}
