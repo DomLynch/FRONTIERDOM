@@ -1,16 +1,25 @@
 import './ui.css';
 import { acceptSnapshot, isDefiniteRejection, maximumQuote, pendingKey } from './commands.js';
+import { createLoginAttempt, authReturnMessage, pendingMatchesAccount } from './auth.js';
 
 const money = (pence) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(pence / 100);
 const signed = (pence) => `${pence > 0 ? '+' : ''}${money(pence)}`;
 const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const place = (id) => id === 'earth' ? 'Earth' : 'Eden';
 
-export function mountUI(container, { api, onState = () => {} }) {
+export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }) {
   let state, selectedLocation, busy = false, destroyed = false, quote = null, pending = null;
   let notice = '', error = '', mode = 'buy', quantities = new Map(), sessionReady = false, recoveryReady = false;
   let restoreFocus = null;
+  let user = null, authChecked = false, accountMismatch = false, loginBusy = false, loginSequence = 0;
+  const loginAttempt = createLoginAttempt(api, (url) => window.location.assign(url), { authOrigin: googleAuthOrigin, siteOrigin: window.location.origin });
   const storage = () => window.localStorage;
+  const returned = authReturnMessage(new URLSearchParams(window.location.search));
+  if (returned) {
+    notice = returned;
+    const url = new URL(window.location.href); url.searchParams.delete('auth');
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  }
 
   function accept(incoming) {
     if (destroyed) return;
@@ -22,6 +31,10 @@ export function mountUI(container, { api, onState = () => {} }) {
 
   async function refresh() {
     const response = await api.state();
+    if (pending && !pendingMatchesAccount(pending, user, response.state.companyId)) {
+      accountMismatch = true; recoveryReady = false;
+      throw new Error('Sign in with the original Google account to confirm your pending trade.');
+    }
     accept(response.state);
   }
 
@@ -32,7 +45,7 @@ export function mountUI(container, { api, onState = () => {} }) {
       try { pending = JSON.parse(existing); } catch { pending = { companyId: 'unreadable-record' }; }
       throw new Error('Another request is awaiting confirmation. Resolve it before trading.');
     }
-    const record = { companyId: state.companyId, ...command };
+    const record = { companyId: state.companyId, userId: user.id, ...command };
     storage().setItem(pendingKey(), JSON.stringify(record));
     pending = record;
   }
@@ -48,6 +61,10 @@ export function mountUI(container, { api, onState = () => {} }) {
     try { await work(); }
     catch (cause) {
       error = cause.message || 'Connection interrupted. Please try again.';
+      if (cause.status === 401 || cause.status === 403) {
+        recoveryReady = false; quote = null; authChecked = false;
+        notice = 'Your session needs reconnecting. Sign in with the same Google account to restore your progress.';
+      }
       if (cause.status === 409 && sessionReady && !pending) {
         quote = null;
         try { await refresh(); } catch { /* Preserve the original conflict and allow explicit refresh. */ }
@@ -67,24 +84,41 @@ export function mountUI(container, { api, onState = () => {} }) {
           if (!pending || typeof pending.companyId !== 'string' || typeof pending.commandId !== 'string'
             || typeof pending.quoteId !== 'string' || !Number.isSafeInteger(pending.expectedRevision)) throw new Error('Invalid retry record');
         } catch { pending = { companyId: 'unreadable-record' }; }
-        notice = 'A previous request needs confirmation. Restore its company session or explicitly discard the local retry record.';
+        notice = 'An earlier trade still needs confirmation. Sign in with its original Google account; the exact request is saved.';
       }
-      if (sessionReady) await refresh();
+      const auth = await api.authSession();
+      if (destroyed) return;
+      if (user?.id !== auth.user?.id) {
+        state = undefined; selectedLocation = undefined; sessionReady = false; quote = null; quantities.clear();
+      }
+      user = auth.user; authChecked = true; accountMismatch = false; recoveryReady = false;
+      if (!user) { sessionReady = false; return; }
+      if (pending?.userId && pending.userId !== user.id) { accountMismatch = true; return; }
+      if (sessionReady || saved) await refresh();
       else {
-        const response = saved ? await api.state() : await api.session();
+        const response = await api.session();
         accept(response.state); sessionReady = true;
       }
-      if (pending) notice = pending.companyId === state.companyId
+      sessionReady = true;
+      if (pending) notice = pendingMatchesAccount(pending, user, state.companyId)
         ? 'A previous request needs confirmation. Retry it before making another trade.'
-        : 'Your browser session now belongs to a different company. The previous company’s request is unresolved.';
+        : 'Sign in with the original Google account to confirm your pending trade.';
       recoveryReady = true;
     });
   }
 
   async function sendPending() {
+    let submitted = false;
     try {
-      if (pending.companyId !== state.companyId) throw new Error('Cannot retry a request belonging to another company.');
+      if (!authChecked || !pendingMatchesAccount(pending, user, state?.companyId)) throw new Error('Sign in with the original Google account before retrying.');
+      const auth = await api.authSession();
+      if (auth.user?.id !== user.id) {
+        authChecked = false; recoveryReady = false;
+        throw new Error('Your account session changed. Reconnect with the original Google account before retrying.');
+      }
+      await refresh(); // Verify the pending company under the current server session.
       const { commandId, quoteId, expectedRevision } = pending;
+      submitted = true;
       const response = await api.command({ commandId, quoteId, expectedRevision });
       accept(response.state);
       clearPending(); quote = null; quantities.clear(); selectedLocation = state.locationId;
@@ -92,7 +126,7 @@ export function mountUI(container, { api, onState = () => {} }) {
       // Replayed responses can predate commands made by another tab.
       await refresh();
     } catch (cause) {
-      if (pending && isDefiniteRejection(cause)) {
+      if (submitted && pending && isDefiniteRejection(cause)) {
         clearPending(); quote = null;
         try { await refresh(); } catch { /* Keep the rejection visible; refresh is separately available. */ }
       }
@@ -114,10 +148,11 @@ export function mountUI(container, { api, onState = () => {} }) {
     if (destroyed) return;
     const hadDialog = !!container.querySelector('[role="dialog"]');
     const focusId = container.contains(document.activeElement) ? document.activeElement?.dataset.focus : null;
-    const disabled = busy || !!pending || !recoveryReady;
+    const disabled = busy || loginBusy || !!pending || !recoveryReady || !authChecked;
+    const logoutBlocked = !!pending && !accountMismatch && (!!state || pending.userId === user?.id);
     container.classList.add('fd-ui');
-    if (!state) {
-      container.innerHTML = `<section class="fd-loading"><span class="fd-eyebrow">ORBITAL COMMERCE / 01</span><h1>FRONTIERDOM<span>Build your own horizon.</span></h1><p role="status">${busy ? 'Connecting to your company…' : escape(error || 'Your company is ready to connect.')}</p>${pending ? `<p>${escape(notice)} Discarding cannot undo or confirm the old trade.</p>` : ''}<button data-action="refresh" ${busy ? 'disabled' : ''}>${busy ? 'Connecting…' : 'Retry connection'}</button>${pending ? `<button class="fd-quiet" data-action="discard" ${busy ? 'disabled' : ''}>Discard retry record & start new company</button>` : ''}</section>`;
+    if (!state || !user || !authChecked || accountMismatch) {
+      container.innerHTML = `<section class="fd-auth"><a class="fd-brand" href="#">FRONTIERDOM<span>INDEPENDENT TRADE COMPANY</span></a><div class="fd-auth-card"><span class="fd-eyebrow">YOUR COMPANY / YOUR HORIZON</span><h1>${pending ? 'Your trade is<br>safe to recover.' : 'The frontier<br>is yours to build.'}</h1><p>${pending ? 'Use the original Google account to confirm the saved request. It will never be charged twice.' : 'One freighter. Three crew. A world of opportunity. Sign in to start trading or continue your journey.'}</p>${user ? `<div class="fd-auth-account"><span>Signed in as</span><strong>${escape(user.displayName || 'Google account')}</strong></div>` : ''}<p class="fd-auth-status" role="status">${escape(loginBusy ? 'Opening Google sign-in…' : busy ? 'Connecting to your company…' : notice)}</p>${error ? `<p class="fd-error" role="alert">${escape(error)}</p>` : ''}<div class="fd-auth-actions">${loginBusy ? '<button class="fd-quiet" data-action="cancel-login">Cancel sign-in</button>' : !user || !authChecked ? `<button class="fd-google" data-action="login" ${busy ? 'disabled' : ''}><span aria-hidden="true">G</span> Continue with Google</button>` : ''}<button class="fd-quiet" data-action="refresh" ${busy || loginBusy ? 'disabled' : ''}>${busy ? 'Connecting…' : 'Retry connection'}</button>${user ? `<button class="fd-quiet" data-action="logout" ${busy || loginBusy || logoutBlocked ? 'disabled' : ''}>${accountMismatch ? 'Sign out to use original account' : 'Sign out'}</button>` : ''}</div>${logoutBlocked ? '<p class="fd-caption">Confirm your pending trade before signing out.</p>' : ''}<p class="fd-caption">Your company progress is saved to your account.</p></div><footer class="fd-footer">ORBITAL COMMERCE <span>Earth / Eden · Trading prototype</span></footer></section>`;
       return;
     }
     const used = state.ship.cargo.reduce((sum, item) => sum + item.quantity, 0);
@@ -137,12 +172,12 @@ export function mountUI(container, { api, onState = () => {} }) {
     }).join('');
     const receipts = [...state.receipts].sort((a, b) => b.revision - a.revision).slice(0, 5);
     container.innerHTML = `<div class="fd-shell" data-location="${state.locationId}">
-      <header class="fd-header"><a class="fd-brand" href="#">FRONTIERDOM<span>INDEPENDENT TRADE COMPANY</span></a><span class="fd-location"><i></i> Docked · ${place(state.locationId)}</span></header>
+      <header class="fd-header"><a class="fd-brand" href="#">FRONTIERDOM<span>INDEPENDENT TRADE COMPANY</span></a><span class="fd-location"><i></i> Docked · ${place(state.locationId)}</span><div class="fd-account"><span title="${escape(user.displayName)}">${escape(user.displayName || 'Google account')}</span><button class="fd-quiet" data-action="logout" ${busy || loginBusy || logoutBlocked ? 'disabled' : ''}>Sign out</button></div></header>
       <section class="fd-hud" aria-label="Company overview"><div><span>Available cash</span><strong>${money(state.cashPence)}</strong></div><div><span>Cargo hold</span><strong>${used}<small> / ${state.ship.capacityUnits} units</small></strong><meter min="0" max="${state.ship.capacityUnits}" value="${used}" aria-label="Cargo capacity"></meter></div><div class="fd-hud-profit"><span>Realized profit / loss</span><strong class="${finances.realizedProfitPence < 0 ? 'fd-loss' : 'fd-gain'}">${signed(finances.realizedProfitPence)}</strong></div></section>
       <section class="fd-intro"><div><span class="fd-eyebrow">${state.locationId === 'earth' ? 'THE DEPARTURE / EARTH ORBIT' : 'THE FRONTIER / EDEN GATE'}</span><h1>${state.locationId === 'earth' ? 'Opportunity<br>begins in orbit.' : 'A new world.<br>A different margin.'}</h1><p>${state.locationId === 'earth' ? 'Start with Medicine. Review 20 units, compare Eden’s demand, then set your course.' : 'Sell your Medicine here. For the journey home, compare Aurelia’s price on Earth.'}</p></div><div class="fd-scene-window" aria-hidden="true"><span>${escape(state.ship.name)}<small>ONE FREIGHTER · ${state.crew.length} CREW</small></span></div></section>
       <div class="fd-feedback" aria-live="polite" role="status">${busy ? '<span>Contacting station…</span>' : escape(notice)}</div>
       ${error ? `<div class="fd-error" role="alert">${escape(error)}</div>` : ''}
-      ${pending ? `<div class="fd-pending"><p>${pending.companyId === state.companyId ? 'Request awaiting confirmation. Retrying uses the original request ID.' : 'Unresolved request belongs to your previous company. Discarding removes only this local retry record; it cannot undo or confirm the old trade.'}</p><button data-action="${pending.companyId === state.companyId ? 'retry' : 'discard'}" ${busy ? 'disabled' : ''}>${busy ? 'Confirming…' : pending.companyId === state.companyId ? 'Retry original request' : 'Discard old retry record & continue'}</button></div>` : ''}
+      ${pending ? `<div class="fd-pending"><p>${pending.companyId === state.companyId ? 'Request awaiting confirmation. Retrying uses the original request ID.' : 'Unresolved request belongs to your previous company. Discarding removes only this local retry record; it cannot undo or confirm the old trade.'}</p><button data-action="retry" ${busy ? 'disabled' : ''}>${busy ? 'Confirming…' : pending.companyId === state.companyId ? 'Retry original request' : 'Discard old retry record & continue'}</button></div>` : ''}
       <div class="fd-workspace"><section class="fd-market"><div class="fd-section-heading"><div><span class="fd-eyebrow">01 / RESEARCH & TRADE</span><h2>Station market</h2></div><button class="fd-quiet" data-action="refresh" ${busy ? 'disabled' : ''}>Refresh</button></div>
       <div class="fd-market-toolbar"><div class="fd-tabs" role="group" aria-label="Market location">${state.markets.map((entry) => `<button aria-pressed="${selectedLocation === entry.locationId}" data-action="market" data-id="${entry.locationId}" ${busy ? 'disabled' : ''}>${place(entry.locationId)}${entry.locationId === state.locationId ? ' <small>HERE</small>' : ''}</button>`).join('')}</div><div class="fd-mode" role="group" aria-label="Trade action"><button data-action="mode" data-id="buy" aria-pressed="${mode === 'buy'}" ${disabled ? 'disabled' : ''}>Buy</button><button data-action="mode" data-id="sell" aria-pressed="${mode === 'sell'}" ${disabled ? 'disabled' : ''}>Sell</button></div></div><div class="fd-cards">${cards}</div><p class="fd-caption">Prices are indicative. Review obtains the exact station quote before you confirm.</p></section>
       <aside class="fd-sidebar"><section class="fd-route"><span class="fd-eyebrow">02 / SET YOUR COURSE</span><h2>${place(state.locationId)} <span>→</span> ${place(destination)}</h2><p>${destination === 'eden' ? 'A settlement beyond the gate. Medical supplies are in demand.' : 'Return to Earth’s established trading hub.'}</p><div class="fd-route-cost"><span>Travel including fuel</span><strong>${route ? money(route.travelCostPence) : 'Unavailable'}</strong></div><button data-action="travel" ${disabled || !route ? 'disabled' : ''}>Review departure <span aria-hidden="true">↗</span></button><small>Travel charges once. Your cargo travels with you.</small></section>
@@ -159,17 +194,38 @@ export function mountUI(container, { api, onState = () => {} }) {
     const button = event.target.closest('button[data-action]');
     if (!button || button.disabled || !container.contains(button)) return;
     const action = button.dataset.action, id = button.dataset.id;
+    if (action === 'cancel-login') {
+      loginSequence++; loginAttempt.cancel(); loginBusy = false; notice = 'Sign-in cancelled. Your progress is unchanged.'; render(); return;
+    }
+    if (action === 'login') {
+      if (busy || loginBusy || (pending && state && !accountMismatch && authChecked)) return;
+      quote = null; loginBusy = true; error = ''; render();
+      const attempt = ++loginSequence;
+      try { await loginAttempt.start(); }
+      catch (cause) { if (attempt === loginSequence) error = cause.message; }
+      finally { if (attempt === loginSequence) { loginBusy = false; if (!destroyed) render(); } }
+      return;
+    }
+    if (action === 'logout') {
+      if (busy || loginBusy) return;
+      await task(async () => {
+        // A different tab may have submitted since this button was rendered.
+        const saved = storage().getItem(pendingKey());
+        if (saved) { try { pending = JSON.parse(saved); } catch { pending = { companyId: 'unreadable-record' }; } }
+        if (pending && !accountMismatch && (!!state || pending.userId === user?.id)) throw new Error('Confirm your pending trade before signing out.');
+        authChecked = false; recoveryReady = false; quote = null;
+        await api.signOut();
+        user = null; state = undefined; selectedLocation = undefined; sessionReady = false; authChecked = true; accountMismatch = false;
+        notice = pending ? 'Signed out. Use the original Google account to confirm your saved trade.' : 'Signed out. Your company will be here when you return.';
+      });
+      return;
+    }
     if (action === 'cancel') { quote = null; render(); return; }
     if (action === 'market') { selectedLocation = id; render(); return; }
     if (action === 'mode') { mode = id; render(); return; }
     if (action === 'refresh') { await connect(); return; }
-    if (action === 'discard') {
-      await task(async () => { clearPending(); notice = 'Old retry record discarded.'; });
-      if (!state) await connect();
-      return;
-    }
     if (action === 'retry') { await task(sendPending); return; }
-    if (pending || !recoveryReady) return;
+    if (pending || !recoveryReady || !user || !authChecked) return;
     await task(async () => {
       if (action === 'confirm') {
         if (Date.parse(quote.expiresAt) <= Date.now()) { quote = null; throw new Error('This quote expired. Review again for a fresh price.'); }
@@ -212,24 +268,31 @@ export function mountUI(container, { api, onState = () => {} }) {
   }
 
   function resume() {
-    if (document.visibilityState === 'visible' && sessionReady && !busy) {
+    if (document.visibilityState === 'visible' && !busy && !loginBusy) {
       quote = null;
-      task(refresh);
+      connect();
     }
+  }
+  function pageShow(event) {
+    if (event.persisted) { loginSequence++; loginAttempt.cancel(); loginBusy = false; busy = false; connect(); }
   }
   container.addEventListener('click', handleClick);
   container.addEventListener('input', handleInput);
   container.addEventListener('keydown', handleKey);
   document.addEventListener('visibilitychange', resume);
   window.addEventListener('online', resume);
+  window.addEventListener('pageshow', pageShow);
   connect();
   return { destroy() {
     destroyed = true;
+    loginSequence++;
+    loginAttempt.cancel();
     container.removeEventListener('click', handleClick);
     container.removeEventListener('input', handleInput);
     container.removeEventListener('keydown', handleKey);
     document.removeEventListener('visibilitychange', resume);
     window.removeEventListener('online', resume);
+    window.removeEventListener('pageshow', pageShow);
     container.replaceChildren(); container.classList.remove('fd-ui');
   } };
 }

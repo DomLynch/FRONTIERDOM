@@ -51,6 +51,20 @@ export function createApi({ fetchImpl = globalThis.fetch } = {}) {
     return data;
   }
   return {
+    authSession: async () => {
+      const data = await request('auth/session');
+      if (data.provider !== 'google' || !(data.user === null || (typeof data.user?.id === 'string'
+        && data.user.id && typeof data.user.displayName === 'string'))) {
+        throw new ApiError(200, { message: 'Invalid account session response.' });
+      }
+      return data;
+    },
+    signInGoogle: () => request('auth/google', {}),
+    signOut: async () => {
+      const data = await request('auth/logout', {});
+      if (data.user !== null || data.provider !== 'google') throw new ApiError(200, { message: 'Invalid sign-out response.' });
+      return data;
+    },
     session: () => request('session', {}),
     state: () => request('state'),
     quote: (action) => request('quotes', { action }),
