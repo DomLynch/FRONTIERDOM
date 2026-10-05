@@ -8,7 +8,7 @@ const valid = `${origins.authOrigin}/auth/v1/authorize?provider=google&redirect_
 test('Google navigation pins HTTPS origin, provider, path and callback', () => {
   assert.equal(validateGoogleURL(valid, origins), valid);
   for (const url of [valid.replace('https:', 'http:'), valid.replace('project.', 'other.'), valid.replace('/authorize?', '/other?'),
-    valid.replace('provider=google', 'provider=github'), valid.replace('frontierdom.com', 'other.com'), 'javascript:alert(1)', valid + '#token']) {
+    valid.replace('provider=google', 'provider=github'), valid.replace('frontierdom.com', 'other.com'), 'javascript:alert(1)', valid + '#token', valid + '&provider=google', valid + '&redirect_to=https://other.com']) {
     assert.throws(() => validateGoogleURL(url, origins), /unavailable/);
   }
   assert.throws(() => validateGoogleURL(valid, { siteOrigin: origins.siteOrigin }), /unavailable/);

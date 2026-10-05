@@ -2,9 +2,10 @@
 export function validateGoogleURL(value, { authOrigin, siteOrigin }) {
   try {
     const expected = new URL(authOrigin), url = new URL(value);
-    if (expected.protocol !== 'https:' || expected.username || expected.password
+    if (expected.protocol !== 'https:' || expected.origin !== authOrigin || expected.username || expected.password
       || url.protocol !== 'https:' || url.origin !== expected.origin
       || url.pathname !== '/auth/v1/authorize' || url.searchParams.get('provider') !== 'google'
+      || url.searchParams.getAll('provider').length !== 1 || url.searchParams.getAll('redirect_to').length !== 1
       || url.searchParams.get('redirect_to') !== `${siteOrigin}/api/v1/auth/callback`
       || url.username || url.password || url.hash) throw new Error();
     return url.href;

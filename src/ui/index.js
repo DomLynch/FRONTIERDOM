@@ -1,5 +1,5 @@
 import './ui.css';
-import { acceptSnapshot, isDefiniteRejection, maximumQuote, pendingKey } from './commands.js';
+import { acceptSnapshot, isDefiniteRejection, maximumQuote, pendingKey, removeResolvedPending } from './commands.js';
 import { createLoginAttempt, authReturnMessage, pendingMatchesAccount } from './auth.js';
 
 const money = (pence) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(pence / 100);
@@ -51,7 +51,11 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
   }
 
   function clearPending() {
-    storage().removeItem(pendingKey());
+    const other = removeResolvedPending(storage(), pendingKey(), pending);
+    if (other) {
+      pending = other;
+      throw new Error('Another saved trade needs confirmation. Refresh to recover it.');
+    }
     pending = null;
   }
 
@@ -61,7 +65,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
     try { await work(); }
     catch (cause) {
       error = cause.message || 'Connection interrupted. Please try again.';
-      if (cause.status === 401 || cause.status === 403) {
+      if (cause.status === 401 || cause.status === 403 || cause.code === 'ACCOUNT_CHANGED') {
         recoveryReady = false; quote = null; authChecked = false;
         notice = 'Your session needs reconnecting. Sign in with the same Google account to restore your progress.';
       }
@@ -86,6 +90,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
         } catch { pending = { companyId: 'unreadable-record' }; }
         notice = 'An earlier trade still needs confirmation. Sign in with its original Google account; the exact request is saved.';
       }
+      authChecked = false; recoveryReady = false;
       const auth = await api.authSession();
       if (destroyed) return;
       if (user?.id !== auth.user?.id) {
@@ -119,7 +124,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
       await refresh(); // Verify the pending company under the current server session.
       const { commandId, quoteId, expectedRevision } = pending;
       submitted = true;
-      const response = await api.command({ commandId, quoteId, expectedRevision });
+      const response = await api.command({ commandId, quoteId, expectedRevision }, { expectedCompanyId: pending.companyId });
       accept(response.state);
       clearPending(); quote = null; quantities.clear(); selectedLocation = state.locationId;
       notice = response.replayed ? 'Previous request confirmed. Your account was charged once.' : 'Confirmed. Your company is up to date.';
@@ -201,9 +206,10 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
       if (busy || loginBusy || (pending && state && !accountMismatch && authChecked)) return;
       quote = null; loginBusy = true; error = ''; render();
       const attempt = ++loginSequence;
-      try { await loginAttempt.start(); }
+      let leaving = false;
+      try { leaving = await loginAttempt.start(); }
       catch (cause) { if (attempt === loginSequence) error = cause.message; }
-      finally { if (attempt === loginSequence) { loginBusy = false; if (!destroyed) render(); } }
+      finally { if (attempt === loginSequence) { loginBusy = leaving; if (!destroyed) render(); } }
       return;
     }
     if (action === 'logout') {

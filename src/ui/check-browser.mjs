@@ -25,7 +25,7 @@ try {
   const errors = [], payloads = [], initialized = [];
   page.on('pageerror', error => errors.push(error.message));
   let user = null, nextUser = 'A', loseResponse = false, delayGoogle = false, releaseGoogle;
-  let badURL = false, authOutage = false, missingState = false, navigationCount = 0;
+  let badURL = false, authOutage = false, missingState = false, raceSwitch = false, navigationCount = 0;
   const companies = new Map(), quotes = new Map(), commands = new Map();
   const userObject = () => user ? { id: user, displayName: user === 'A' ? 'Mara <Captain>' : 'Other account' } : null;
   await page.route(`${origin}/**`, async route => {
@@ -56,13 +56,19 @@ try {
     }
     const state = companies.get(user);
     if (!state) return fail(404, 'NOT_FOUND', 'Company not initialized.');
-    if (path === 'state') return missingState ? fail(404, 'NOT_FOUND', 'Company unavailable.') : reply({ state });
+    if (path === 'state') {
+      const response = missingState ? fail(404, 'NOT_FOUND', 'Company unavailable.') : reply({ state });
+      if (raceSwitch) { raceSwitch = false; user = 'B'; }
+      return response;
+    }
     if (path === 'quotes') {
       const quote = { id: crypto.randomUUID(), action: body.action, expectedRevision: state.revision, expiresAt: new Date(Date.now() + 60000).toISOString(), ...quoteAction(state, body.action) };
       quotes.set(quote.id, { user, quote }); return reply({ quote });
     }
     if (path === 'commands') {
-      payloads.push({ user, body });
+      const expectedCompanyId = route.request().headers()['x-frontierdom-company-id'];
+      payloads.push({ user, body, expectedCompanyId });
+      if (expectedCompanyId !== state.companyId) return fail(409, 'ACCOUNT_CHANGED', 'Account changed. Reconnect with the original account.');
       const saved = commands.get(body.commandId);
       if (saved) {
         if (saved.user !== user) return fail(403, 'FORBIDDEN', 'Wrong account.');
@@ -128,11 +134,27 @@ try {
   await page.locator('[data-action="logout"]').click(); await page.waitForSelector('[data-action="login"]:enabled');
   await page.locator('[data-action="login"]').click(); await page.waitForSelector('[aria-label="Company overview"]');
   assert.deepEqual(companies.get('A'), restored); assert.equal(companies.size, 1);
+  // Race AFTER A preflight: the verified server cookie switches to B before POST.
+  companies.set('B', createInitialState('company-B'));
+  const beforeB = structuredClone(companies.get('B'));
+  await page.locator('[data-quantity="medicine"]').fill('1');
+  await page.locator('[data-action="quote"][data-id="medicine"]').click(); loseResponse = true;
+  await page.locator('[data-action="confirm"]').click(); await page.waitForSelector('[data-action="retry"]:enabled');
+  const racedIntent = await pending(), start = payloads.length - 1;
+  raceSwitch = true; await page.locator('[data-action="retry"]').click();
+  await page.waitForSelector('.fd-auth .fd-error');
+  assert.equal(await pending(), racedIntent); assert.deepEqual(companies.get('B'), beforeB);
+  assert.equal(payloads.at(-1).user, 'B'); assert.equal(payloads.at(-1).expectedCompanyId, 'company-A');
+  user = 'A'; await page.locator('[data-action="refresh"]').click();
+  await page.waitForSelector('[data-action="retry"]:enabled'); await page.locator('[data-action="retry"]').click();
+  await page.waitForFunction(() => localStorage.getItem('frontierdom.pending.v1') === null);
+  for (const request of payloads.slice(start)) { assert.deepEqual(request.body, payloads[start].body); assert.equal(request.expectedCompanyId, 'company-A'); }
+  assert.equal(companies.get('A').ship.cargo.find(item => item.commodityId === 'medicine').quantity, 2);
   await page.screenshot({ path: `${output}/account-restored-portrait.png`, fullPage: true });
   for (const viewport of [{ width: 320, height: 700 }, { width: 844, height: 390 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   }
   await page.screenshot({ path: `${output}/account-restored-desktop.png`, fullPage: true }); assert.deepEqual(errors, []);
-  console.log('PASS: signed-out/cancel/error/no guest fallback; exact auth origin; escaped signed-in display; lost command reload/expiry/A→B→A recovery identical retry/one charge; logout/login restores company; responsive320/390/844/1440. Fixture provider/economy, not live OAuth/Postgres acceptance.');
+  console.log('PASS: signed-out/cancel/error/no guest fallback; exact auth origin; escaped display; lost command reload/expiry/A→B→A exact recovery/one charge; POST race rejects B before replay with original company header; A re-sign-in identical replay; progress restore; responsive320/390/844/1440. Fixture provider/economy, not real OAuth/Postgres acceptance.');
 } finally { await browser?.close(); vite.kill('SIGTERM'); }

@@ -2,7 +2,7 @@
 export function isDefiniteRejection(error) {
   return error.outcomeUnknown !== true && error.status >= 400 && error.status < 500
     && ![401, 403, 429].includes(error.status)
-    && error.code !== 'INVALID_RESPONSE' && error.code !== 'IDEMPOTENCY_CONFLICT';
+    && error.code !== 'INVALID_RESPONSE' && error.code !== 'IDEMPOTENCY_CONFLICT' && error.code !== 'ACCOUNT_CHANGED';
 }
 
 export function acceptSnapshot(current, incoming) {
@@ -14,6 +14,16 @@ export function acceptSnapshot(current, incoming) {
 
 export function pendingKey() {
   return 'frontierdom.pending.v1';
+}
+
+export function removeResolvedPending(storage, key, resolved) {
+  const saved = storage.getItem(key);
+  if (saved) {
+    const current = JSON.parse(saved);
+    if (['companyId', 'userId', 'commandId', 'quoteId', 'expectedRevision'].some((field) => current?.[field] !== resolved[field])) return current;
+    storage.removeItem(key);
+  }
+  return null;
 }
 
 // Max uses authoritative quotes; indicative prices never determine affordability.
