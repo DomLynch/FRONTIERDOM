@@ -39,7 +39,7 @@ try {
     const path=new URL(route.request().url()).pathname;let body;
     if(path.endsWith('auth/session'))body={apiVersion:1,provider:'google',user:{id:'visual-user',displayName:'Battle visual fixture'}};
     else if(path.endsWith('quotes')) {const {action}=route.request().postDataJSON();quote={id:crypto.randomUUID(),action,expectedRevision:f.state.revision,expiresAt:new Date(Date.now()+60000).toISOString(),...quoteAction(f.state,action)};body={apiVersion:1,quote};}
-    else if(path.endsWith('commands')) {const {commandId}=route.request().postDataJSON();f.advance(quote.action);body={apiVersion:1,commandId,state:f.state,encounter:f.projection,receipt:f.state.history.at(-1),replayed:false};}
+    else if(path.endsWith('commands')) {const {commandId}=route.request().postDataJSON();f.advance(quote.action);body={apiVersion:1,commandId,state:f.state,encounter:f.projection,receipt:f.state.receipts.at(-1),replayed:false};}
     else body={apiVersion:1,state:f.state,encounter:f.projection};
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});
    });
