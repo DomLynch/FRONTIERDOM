@@ -114,8 +114,13 @@ try {
   assert.equal(await page.locator('[data-action="retry"]').count(), 0);
   await page.locator('[data-action="discard"]').click();
   await page.waitForSelector('[data-action="quote"]:enabled');
+  state.companyId = 'changed-session';
+  await page.locator('[data-action="refresh"]').first().click();
+  await page.waitForSelector('.fd-error');
+  assert.match(await page.locator('.fd-error').innerText(), /Company session changed/);
+  assert.equal(await page.locator('[data-action="quote"]:enabled').count(), 0);
   assert.deepEqual(errors, []);
-  console.log('PASS: exact quote, lost response + reload + expired session + identical replay, old snapshot ignored, one charge, travel/sell, company mismatch, 320/390/844/1440 layout; fixture API only.');
+  console.log('PASS: exact quote, lost response + reload + expired session + identical replay, old snapshot ignored, one charge, travel/sell, company mismatch and mid-session identity guard, 320/390/844/1440 layout; fixture API only.');
 } finally {
   await browser?.close(); vite.kill('SIGTERM');
 }

@@ -14,6 +14,7 @@ export function mountUI(container, { api, onState = () => {} }) {
 
   function accept(incoming) {
     if (destroyed) return;
+    if (state && state.companyId !== incoming.companyId) recoveryReady = false;
     state = acceptSnapshot(state, incoming);
     selectedLocation ??= state.locationId;
     onState(state);
