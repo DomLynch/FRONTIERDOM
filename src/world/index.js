@@ -90,9 +90,9 @@ export function createWorld(app) {
   // Humanity's modular orbital port sits in front of an impossibly large ancient ring.
   const station = root('Human orbital terminal', earth);
   custom(station, 'Circular docking collar', ring(device, 9, 0.55, 64), [0, -2, 1], steel, [90, 0, 0]);
-  primitive(station, 'Landing pad', 'cylinder', [0, -2.25, 1], [18, 0.25, 18], ivory);
-  custom(station, 'Pad perimeter lighting', ring(device, 8.6, 0.06, 64), [0, -2.07, 1], amber, [90, 0, 0]);
-  for (let i = 0; i < 5; i++) primitive(station, 'Dock approach stripe', 'box', [0, -2.1, 7 - i], [2.2, 0.03, 0.1], yellow);
+  primitive(station, 'Landing pad', 'cylinder', [0, -2.075, 1], [18, 0.25, 18], ivory);
+  custom(station, 'Pad perimeter lighting', ring(device, 8.6, 0.06, 64), [0, -1.91, 1], amber, [90, 0, 0]);
+  for (let i = 0; i < 5; i++) primitive(station, 'Dock approach stripe', 'box', [0, -1.92, 7 - i], [2.2, 0.03, 0.1], yellow);
   const habitat = root('Orbital habitat', earth); habitat.setLocalPosition(-18, 4, -17);
   primitive(habitat, 'Pressure vessel', 'cylinder', [0, 0, 0], [5, 15, 5], ivory, [0, 0, 90]);
   custom(habitat, 'Habitat wheel', ring(device, 6, 0.65, 48), [0, 0, -2], steel);
@@ -131,8 +131,8 @@ export function createWorld(app) {
     primitive(ship, 'Exhaust bell', 'cone', [side * 2.8, 0.35, -5.8], [1.65, 1.1, 1.65], steel, [90, 0, 0]);
     custom(ship, 'Exhaust rim', ring(device, 0.78, 0.1, 24), [side * 2.8, 0.35, -6.32], steel);
     primitive(ship, 'Engine glow', 'sphere', [side * 2.8, 0.35, -6.29], [1.17, 1.17, 0.08], cyan);
-    primitive(ship, 'Landing strut', 'cylinder', [side * 1.3, -1, -1], [0.17, 1.3, 0.17], steel, [0, 0, side * 20]);
-    primitive(ship, 'Landing skid', 'capsule', [side * 1.7, -1.55, -1], [0.28, 3.1, 0.28], steel, [90, 0, 0]);
+    primitive(ship, 'Landing strut', 'cylinder', [side * 1.3, -1.13, -1], [0.17, 1.3, 0.17], steel, [0, 0, side * 20]);
+    primitive(ship, 'Landing skid', 'capsule', [side * 1.7, -1.8, -1], [0.28, 3.1, 0.28], steel, [90, 0, 0]);
     primitive(ship, 'Ship running light', 'sphere', [side * 2.3, 0.85, 1.7], [0.1, 0.1, 0.1], amber);
   }
   // Small asymmetric service patches and heat-scarring make the reusable ship look worked.
@@ -141,8 +141,8 @@ export function createWorld(app) {
   // Eden is a living valley: branching waterways and floating organic terraces, not a green dock.
   custom(eden, 'Foreground living terrace', terrain(device, 17, 2.5, 1), [0, -2, 0], deepJade);
   custom(eden, 'Distant living terrace', terrain(device, 29, 6, 3), [0, -2, -44], jade);
-  primitive(eden, 'Arrival platform', 'cylinder', [0, -2.1, 5], [12, 0.3, 12], paleStone);
-  custom(eden, 'Platform Aurelia tracing', ring(device, 5.5, 0.08, 48), [0, -1.91, 5], aqua, [90, 0, 0]);
+  primitive(eden, 'Arrival platform', 'cylinder', [0, -2.1, -3], [12, 0.3, 12], paleStone);
+  custom(eden, 'Platform Aurelia tracing', ring(device, 5.5, 0.08, 48), [0, -1.91, -3], aqua, [90, 0, 0]);
   for (let i = 0; i < 8; i++) {
     const z = -8 - i * 5, x = Math.sin(i * 0.7) * 6;
     primitive(eden, 'Luminous river', 'capsule', [x, -1.5, z], [1.8, 7, 0.12], aqua, [90, 0, i * 14 - 30]);

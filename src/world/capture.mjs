@@ -1,7 +1,7 @@
 // Visual QA only: real candidate entry point/UI/Application with deterministic API snapshots.
 // This never contacts production or claims economic/server acceptance.
 import { chromium } from '@playwright/test';
-import { createInitialState } from '../sim/economy/index.js';
+import { createInitialState, quoteAction, applyAction } from '../sim/economy/index.js';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import net from 'node:net';
@@ -32,6 +32,32 @@ try {
    await context.close();
   }
  }
+ // Actual UI→quote→confirmed snapshot→World transit in the same built client.
+ // Transport/kernel here are visual fixtures, not production/server acceptance.
+ const context=await browser.newContext({viewport:{width:1280,height:720},deviceScaleFactor:1,reducedMotion:'no-preference'});
+ const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
+ let state=createInitialState('transit-fixture'), quote;
+ await page.route('**/api/v1/**',async route=>{
+  const path=new URL(route.request().url()).pathname;let body;
+  if(path.endsWith('auth/session'))body={apiVersion:1,provider:'google',user:{id:'transit-user',displayName:'Transit review'}};
+  else if(path.endsWith('quotes')) {
+   const {action}=route.request().postDataJSON();quote={id:'visual-quote',action,expectedRevision:state.revision,expiresAt:new Date(Date.now()+60000).toISOString(),...quoteAction(state,action)};
+   body={apiVersion:1,quote};
+  } else if(path.endsWith('commands')) {
+   const {commandId}=route.request().postDataJSON();const result=applyAction(state,quote.action,{commandId,receiptId:'visual-receipt',occurredAt:new Date().toISOString()});state=result.state;
+   body={apiVersion:1,commandId,state,receipt:result.receipt,replayed:false};
+  } else body={apiVersion:1,state};
+  await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});
+ });
+ await page.goto(`http://127.0.0.1:${port}`,{waitUntil:'networkidle'});await page.waitForTimeout(1000);
+ await page.screenshot({path:`${outputs}/transit-initial-earth.png`});
+ await page.locator('button[data-action="panel"][data-id="route"]').click();
+ await page.locator('button[data-action="travel"]').click();
+ await page.locator('button[data-action="confirm"]').click();
+ await page.waitForTimeout(100);await page.screenshot({path:`${outputs}/transit-confirmed-eden.png`});
+ await page.waitForTimeout(2200);await page.screenshot({path:`${outputs}/transit-settled-eden.png`});
+ await page.reload({waitUntil:'networkidle'});await page.waitForTimeout(400);await page.screenshot({path:`${outputs}/transit-reloaded-eden.png`});
+ await context.close();
  if(errors.length)throw new Error(errors.join('\n'));
- await writeFile(`${outputs}/receipt.json`,JSON.stringify({entryPoint:'built candidate src/main.js',engine:'2.23.0',snapshots:'test-only intercepted authoritative-shape fixtures; no live API/gameplay claim',viewports:[[390,844],[1280,720]],reducedMotion:true,pageErrors:errors},null,2));
+ await writeFile(`${outputs}/receipt.json`,JSON.stringify({entryPoint:'built candidate src/main.js',engine:'2.23.0',snapshots:'test-only intercepted authoritative-shape fixtures; no live API/gameplay claim',viewports:[[390,844],[1280,720]],reducedMotion:true,pageErrors:errors,transit:'fixture transport through real UI quote/command and accepted state; initial/crossing/settled/reloaded frames retained'},null,2));
 }finally{await browser?.close();server.kill('SIGTERM');}
