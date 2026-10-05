@@ -2,6 +2,8 @@
 
 Owner direction, 5 October 2026. Full reference: `../briefs/ORIGINAL-BRIEF.md`.
 
+Later owner decision on 5 October: add a dedicated Backend lane for Supabase/database and a server-authoritative trading foundation; separate Combat, Auditor and Deploy. This supersedes the original brief's backend deferral while retaining the small first playable slice.
+
 ## Core promise
 
 An ordinary entrepreneur with a cheap ship, three employees and limited capital makes consequential trading decisions. Plausible 2035–2050 human machinery contrasts with impossible celestial worlds. Serious tone; elegant, touch-friendly interface.
@@ -10,7 +12,7 @@ The loop is market research → buy → contract/travel → risk → sell/delive
 
 ## Staged delivery
 
-1. **Trade loop:** PlayCanvas station plus Eden, £25,000, one freighter, commodity stock/cargo capacity, buy/sell, travel/fuel and a clear trip profit/loss receipt. Simple 3D first; no elaborate art dependency. Prove a return trip is understandable and worth repeating.
+1. **Trade loop and trusted foundation:** PlayCanvas station plus Eden, £25,000, one freighter, commodity stock/cargo capacity, buy/sell, travel/fuel and a clear trip profit/loss receipt. In parallel, Backend designs the minimal account/company/persistent-inventory and authoritative buy/sell transaction boundary. Development fixtures may run locally; persistent balances, prices and stock must be validated atomically server-side. Simple 3D first; no elaborate art dependency. Prove a return trip is understandable and worth repeating.
 2. **Risk:** one delivery contract, one pirate encounter, pay/drop/run/fight, tactical setup and seeded instant battle result. Loss, damage and escape matter economically. Save/load should arrive as soon as repeat play needs it rather than be held until final polish.
 3. **Watch consequences:** PlayCanvas battle viewer with 1×/2×/5×/instant, readable damage/retreat events and strategic commands. Same seed, inputs and commands produce the same result regardless of playback speed. Commands take effect at simulation time; instant resolve finishes the current state.
 4. **Complete the slice:** Forge, six commodities, four contract types, five meaningful upgrades, named Captain/Engineer/Trader, short economic/story events and a second instance of the existing ship archetype. Test simple concurrent route assignment without adding ship classes or an automation framework.
@@ -25,4 +27,6 @@ Prices respond to stock/demand and recent trades with simple understandable rule
 - Multiple camera styles are supported, but only build the views needed for each checkpoint.
 - Roughly 2,000–3,500 original logic lines is a guideline; readability and fun take priority.
 
-No MMO accounts/economy/backend, direct combat, walking character, procedural planets, factories, base building, stock market, elaborate diplomacy or runtime LLM dependency in the prototype. Do not add worlds to compensate for an uninteresting trade loop.
+Backend ownership includes accounts, persistent state, market transactions and trusted contract/battle settlement. Start with one reliable transaction path and prove ownership isolation, retry/idempotency and concurrent-spend handling before expansion. A production-scale MMO, sharding, microservices and a distributed economy are later scale decisions, not prerequisites for the first route.
+
+No direct combat, walking character, procedural planets, factories, base building, stock market, elaborate diplomacy or runtime LLM dependency in the prototype. Do not add worlds to compensate for an uninteresting trade loop.
