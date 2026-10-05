@@ -2,17 +2,20 @@ import './ui.css';
 import { acceptSnapshot, isDefiniteRejection, maximumQuote, pendingKey, removeResolvedPending } from './commands.js';
 import { createLoginAttempt, authReturnMessage, pendingMatchesAccount } from './auth.js';
 import { voyageObjective, reviewObjective, readGuidance, saveGuidance } from './guidance.js';
+import { checkedEncounter, expeditionObjective, expeditionPanel, battleControls, intentLabel, quoteConsequences, dropIntent, advanceIntent, outcomeLabel } from './expedition.js';
 
 const money = (pence) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(pence / 100);
 const signed = (pence) => `${pence > 0 ? '+' : ''}${money(pence)}`;
 const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const place = (id) => id === 'earth' ? 'Earth' : 'Eden';
 
-export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }) {
+export function mountUI(container, { api, onState = () => {}, onEncounter = () => {}, googleAuthOrigin }) {
   let state, selectedLocation, busy = false, destroyed = false, quote = null, pending = null;
   let notice = '', error = '', mode = 'buy', quantities = new Map(), sessionReady = false, recoveryReady = false;
   let restoreFocus = null;
   let panel = null, guidanceVisible = true, guidanceCompany, fallbackObjective;
+  let encounter = null, history = null, playing = false, speed = 1, playbackTimer;
+  let posture = 'balanced', protectCargo = true, retreatHullPercent = 35, dropSelection = {}, repairPoints = 1;
   let user = null, authChecked = false, accountMismatch = false, loginBusy = false, loginSequence = 0;
   const loginAttempt = createLoginAttempt(api, (url) => window.location.assign(url), { authOrigin: googleAuthOrigin, siteOrigin: window.location.origin });
   const storage = () => window.localStorage;
@@ -23,11 +26,26 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
-  function accept(incoming) {
+  function clearEncounter() {
+    playing = false; clearTimeout(playbackTimer); encounter = null; history = null;
+    onEncounter(null, null);
+  }
+
+  function accept(incoming, projection) {
     if (destroyed) return;
     if (state && state.companyId !== incoming.companyId) recoveryReady = false;
     const previous = state;
-    state = acceptSnapshot(state, incoming);
+    const accepted = acceptSnapshot(state, incoming);
+    const nextEncounter = accepted === incoming ? checkedEncounter(projection, incoming) : encounter;
+    if (nextEncounter?.id === encounter?.id && nextEncounter && nextEncounter.tick < encounter.tick) throw new Error('Encounter snapshot is older than the accepted battle. Reconnect.');
+    state = accepted;
+    if (accepted === incoming) {
+      const wasResolved=encounter?.status==='resolved';
+      if (encounter?.id !== nextEncounter?.id) { history = null; dropSelection = {}; }
+      encounter = nextEncounter;
+      if (encounter?.status !== 'active') { playing = false; clearTimeout(playbackTimer); }
+      if(encounter?.status==='resolved' && !wasResolved) panel='expedition';
+    }
     if (previous?.revision !== state.revision || previous?.companyId !== state.companyId) fallbackObjective = null;
     if (guidanceCompany !== state.companyId) {
       guidanceCompany = state.companyId;
@@ -36,6 +54,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
     }
     selectedLocation ??= state.locationId;
     onState(state);
+    if(accepted===incoming) onEncounter(encounter,state.companyId);
   }
 
   async function refresh() {
@@ -44,7 +63,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
       accountMismatch = true; recoveryReady = false;
       throw new Error('Sign in with the original Google account to confirm your pending trade.');
     }
-    accept(response.state);
+    accept(response.state, response.encounter);
   }
 
   function persist(command) {
@@ -73,9 +92,11 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
     busy = true; error = ''; render();
     try { await work(); }
     catch (cause) {
+      playing = false; clearTimeout(playbackTimer);
       error = cause.message || 'Connection interrupted. Please try again.';
       if (cause.status === 401 || cause.status === 403 || cause.code === 'ACCOUNT_CHANGED') {
         recoveryReady = false; quote = null; authChecked = false;
+        clearEncounter();
         notice = 'Your session needs reconnecting. Sign in with the same Google account to restore your progress.';
       }
       if (cause.status === 409 && sessionReady && !pending) {
@@ -83,7 +104,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
         try { await refresh(); } catch { /* Preserve the original conflict and allow explicit refresh. */ }
       }
     }
-    finally { busy = false; if (!destroyed) render(); }
+    finally { busy = false; if (!destroyed) { render(); schedulePlayback(); } }
   }
 
   async function connect() {
@@ -100,6 +121,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
         notice = 'An earlier trade still needs confirmation. Sign in with its original Google account; the exact request is saved.';
       }
       authChecked = false; recoveryReady = false;
+      clearEncounter();
       const auth = await api.authSession();
       if (destroyed) return;
       if (user?.id !== auth.user?.id) {
@@ -111,7 +133,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
       if (sessionReady || saved) await refresh();
       else {
         const response = await api.session();
-        accept(response.state); sessionReady = true;
+        accept(response.state, response.encounter); sessionReady = true;
       }
       sessionReady = true;
       if (pending) notice = pendingMatchesAccount(pending, user, state.companyId)
@@ -134,9 +156,12 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
       const { commandId, quoteId, expectedRevision } = pending;
       submitted = true;
       const response = await api.command({ commandId, quoteId, expectedRevision }, { expectedCompanyId: pending.companyId });
-      accept(response.state);
+      accept(response.state, response.encounter);
       clearPending(); quote = null; quantities.clear(); selectedLocation = state.locationId;
       notice = response.replayed ? 'Previous request confirmed. Your account was charged once.' : 'Confirmed. Your company is up to date.';
+      if(encounter?.status==='resolved') notice=encounter.result?.outcome
+        ? `${outcomeLabel(encounter.result.outcome)} · hull ${state.expedition.shipCondition.hull}/100 · ${encounter.result.scenario.cargoLostUnits} cargo units lost. Crossing settled.`
+        : 'Interception settled. Horizon has arrived at Earth.';
       // Replayed responses can predate commands made by another tab.
       await refresh();
     } catch (cause) {
@@ -154,8 +179,24 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
   }
 
   function actionLabel(action) {
-    return action.type === 'travel' ? `Travel to ${place(action.destinationId)}`
-      : `${action.type === 'buy' ? 'Buy' : 'Sell'} ${action.quantity} ${commodityName(action.commodityId)}`;
+    return intentLabel(action) || (action.type === 'travel' ? `Travel to ${place(action.destinationId)}`
+      : `${action.type === 'buy' ? 'Buy' : 'Sell'} ${action.quantity} ${commodityName(action.commodityId)}`);
+  }
+
+  function schedulePlayback() {
+    clearTimeout(playbackTimer);
+    if (!destroyed && playing && encounter?.status === 'active' && !pending && !busy && !quote && authChecked && recoveryReady) {
+      playbackTimer = setTimeout(() => advanceBattle(speed), 1500);
+    }
+  }
+
+  async function advanceBattle(ticks) {
+    if (busy || pending || quote || !authChecked || !recoveryReady || encounter?.status !== 'active') return;
+    await task(async () => {
+      const response = await api.quote(advanceIntent(encounter, ticks));
+      persist({ commandId:crypto.randomUUID(), quoteId:response.quote.id, expectedRevision:response.quote.expectedRevision });
+      await sendPending();
+    });
   }
 
   function render() {
@@ -163,6 +204,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
     const hadDialog = !!container.querySelector('[role="dialog"]');
     const focusId = container.contains(document.activeElement) ? document.activeElement?.dataset.focus : null;
     const disabled = busy || loginBusy || !!pending || !recoveryReady || !authChecked;
+    const tradingDisabled = disabled || !!state?.expedition?.pendingJourney;
     const logoutBlocked = !!pending && !accountMismatch && (!!state || pending.userId === user?.id);
     container.classList.add('fd-ui');
     container.classList.toggle('fd-playing', !!state && !!user && authChecked && !accountMismatch);
@@ -183,31 +225,32 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
       const other = comparison?.commodities.find((entry) => entry.id === item.id);
       const quantity = quantities.get(item.id) ?? 1;
       const ceiling = mode === 'sell' ? cargo?.quantity || 0 : Math.min(item.stockUnits, state.ship.capacityUnits - used);
-      return `<article class="fd-commodity"><div class="fd-item-head"><span class="fd-item-symbol" aria-hidden="true">${String(index + 1).padStart(2, '0')}</span><div><h3>${escape(item.name)}</h3><p>${item.stockUnits} in market · ${cargo?.quantity || 0} aboard</p></div></div><div class="fd-price"><strong>${money(mode === 'buy' ? item.buyUnitPence : item.sellUnitPence)}</strong><span>indicative / unit</span></div><p class="fd-comparison">${place(comparison?.locationId)} buys at <b>${other ? money(other.sellUnitPence) : '—'}</b></p>${cargo?.quantity ? `<p class="fd-basis">Cargo acquisition cost ${money(cargo.costBasisPence)}</p>` : ''}${here ? `<div class="fd-trade-controls"><label class="fd-quantity">Units<input aria-label="${escape(item.name)} quantity" data-quantity="${escape(item.id)}" data-focus="qty-${escape(item.id)}" type="number" inputmode="numeric" min="1" max="${ceiling}" step="1" value="${quantity}" ${disabled || !ceiling ? 'disabled' : ''}></label><button class="fd-quiet" data-action="max" data-id="${escape(item.id)}" ${disabled || !ceiling ? 'disabled' : ''}>Max</button><button data-action="quote" data-id="${escape(item.id)}" data-focus="trade-${escape(item.id)}" ${disabled || !ceiling ? 'disabled' : ''}>Review ${mode}</button></div>` : '<p class="fd-away">Travel here to trade</p>'}</article>`;
+      return `<article class="fd-commodity"><div class="fd-item-head"><span class="fd-item-symbol" aria-hidden="true">${String(index + 1).padStart(2, '0')}</span><div><h3>${escape(item.name)}</h3><p>${item.stockUnits} in market · ${cargo?.quantity || 0} aboard</p></div></div><div class="fd-price"><strong>${money(mode === 'buy' ? item.buyUnitPence : item.sellUnitPence)}</strong><span>indicative / unit</span></div><p class="fd-comparison">${place(comparison?.locationId)} buys at <b>${other ? money(other.sellUnitPence) : '—'}</b></p>${cargo?.quantity ? `<p class="fd-basis">Cargo acquisition cost ${money(cargo.costBasisPence)}</p>` : ''}${here ? `<div class="fd-trade-controls"><label class="fd-quantity">Units<input aria-label="${escape(item.name)} quantity" data-quantity="${escape(item.id)}" data-focus="qty-${escape(item.id)}" type="number" inputmode="numeric" min="1" max="${ceiling}" step="1" value="${quantity}" ${tradingDisabled || !ceiling ? 'disabled' : ''}></label><button class="fd-quiet" data-action="max" data-id="${escape(item.id)}" ${tradingDisabled || !ceiling ? 'disabled' : ''}>Max</button><button data-action="quote" data-id="${escape(item.id)}" data-focus="trade-${escape(item.id)}" ${tradingDisabled || !ceiling ? 'disabled' : ''}>Review ${mode}</button></div>` : '<p class="fd-away">Travel here to trade</p>'}</article>`;
     }).join('');
     const receipts = [...state.receipts].sort((a, b) => b.revision - a.revision).slice(0, 5);
-    const objective = fallbackObjective || voyageObjective(state);
+    const objective = expeditionObjective(state, encounter) || fallbackObjective || voyageObjective(state);
     const captain = state.crew.find(c => c.role === 'captain');
     const last = receipts[0];
     const confirmedArrival = last?.action.type === 'travel' && last.locationAfter === 'eden';
-    const crewLines = { captain:'I’ll take Horizon through the gate. You choose the cargo and the course.', engineer:'I keep the freighter running. Our hold has room for 40 units.', trader:'Compare the far market, then review the local quote. A margin is never a promise.' };
-    const heading = {market:'Station market',route:'Gate corridor',ship:'Horizon & crew',ledger:'Voyage ledger'};
+    const crewLines = { captain:'I’ll take Horizon through the gate. You choose the cargo and the course.', engineer:`I keep the freighter running. Our hold has room for ${state.ship.capacityUnits} units.`, trader:'Compare the far market, then review the local quote. A margin is never a promise.' };
+    const heading = {market:'Station market',route:'Gate corridor',ship:'Horizon & crew',ledger:'Voyage ledger',expedition:'First expedition'};
     let content = '';
     if (panel === 'market') content = `<div class="fd-market-toolbar"><div class="fd-tabs" role="group" aria-label="Market location">${state.markets.map(entry => `<button aria-pressed="${selectedLocation === entry.locationId}" data-action="market" data-id="${entry.locationId}">${place(entry.locationId)} <small>${entry.locationId === state.locationId ? 'DOCKED' : 'REMOTE'}</small></button>`).join('')}</div><div class="fd-mode" role="group" aria-label="Trade action"><button data-action="mode" data-id="buy" aria-pressed="${mode === 'buy'}" ${disabled ? 'disabled' : ''}>Buy</button><button data-action="mode" data-id="sell" aria-pressed="${mode === 'sell'}" ${disabled ? 'disabled' : ''}>Sell</button></div></div><p class="fd-market-context">${here ? `Trading at your physical port: ${place(state.locationId)}.` : `Remote prices at ${place(selectedLocation)}. Horizon is still docked at ${place(state.locationId)}; travel before trading here.`}</p><div class="fd-cards">${cards}</div><p class="fd-caption">Indicative prices. Review a station quote before confirming.</p>`;
-    if (panel === 'route') content = `<div class="fd-route-map" aria-label="Earth through the gate to Eden"><span class="${state.locationId === 'earth' ? 'fd-here' : ''}">Earth<small>Human orbital port</small></span><span>◇<small>Ancient gate</small></span><span class="${state.locationId === 'eden' ? 'fd-here' : ''}">Eden<small>Living frontier</small></span></div><p>Horizon is docked at <b>${place(state.locationId)}</b>. Reviewing a remote market does not move your ship.</p><div class="fd-route-cost"><span>${place(state.locationId)} → ${place(destination)} · fuel included</span><strong>${route ? money(route.travelCostPence) : 'Unavailable'}</strong></div><p class="fd-caption">Cargo stays aboard. This trading route has no combat encounter yet. Launch occurs only after a confirmed travel command.</p><button data-action="travel" ${disabled || !route ? 'disabled' : ''}>Review departure to ${place(destination)}</button>`;
+    if (panel === 'route') content = `<div class="fd-route-map" aria-label="Earth through the gate to Eden"><span class="${state.locationId === 'earth' ? 'fd-here' : ''}">Earth<small>Human orbital port</small></span><span>◇<small>Ancient gate</small></span><span class="${state.locationId === 'eden' ? 'fd-here' : ''}">Eden<small>Living frontier</small></span></div><p>Horizon is docked at <b>${place(state.locationId)}</b>. Reviewing a remote market does not move your ship.</p><div class="fd-route-cost"><span>${place(state.locationId)} → ${place(destination)} · fuel included</span><strong>${route ? money(route.travelCostPence) : 'Unavailable'}</strong></div><p class="fd-caption">Cargo stays aboard. ${state.expedition?.enrolled && state.expedition.firstReturnStatus === 'unused' ? 'Your first loaded return from Eden may be intercepted; the fare reserves arrival, but settlement must complete first.' : 'This departure has no opening interception.'} Launch occurs only after a confirmed travel command.</p><button data-action="travel" ${tradingDisabled || !route ? 'disabled' : ''}>Review departure to ${place(destination)}</button>`;
     if (panel === 'ship') content = `<p class="fd-caption">One independent freighter · ${state.crew.length} crew · ${used}/${state.ship.capacityUnits} cargo units</p><div class="fd-inventory">${state.ship.cargo.map(item => `<div><span>${escape(commodityName(item.commodityId))}</span><b>${item.quantity} units</b></div>`).join('') || '<p>The hold is empty.</p>'}</div><div class="fd-route-cost"><span>Cargo acquisition cost</span><strong>${money(basis)}</strong></div><div class="fd-crew">${state.crew.map(crew => `<article><span class="fd-avatar" aria-hidden="true">${escape(crew.name.slice(0,1))}</span><div><h3>${escape(crew.name)} <small>${escape(crew.role)}</small></h3><p>${escape(crewLines[crew.role] || 'Ready for the next voyage.')}</p></div></article>`).join('')}</div>`;
-    if (panel === 'ledger') content = `<div class="fd-totals"><div><span>Realized profit / loss</span><b class="${finances.realizedProfitPence < 0 ? 'fd-loss' : 'fd-gain'}">${signed(finances.realizedProfitPence)}</b></div><div><span>Net cash flow</span><b>${signed(finances.netCashFlowPence)}</b></div><div><span>Sales</span><b>${money(finances.salesPence)}</b></div><div><span>Sold cargo cost</span><b>${money(finances.salesCostBasisPence)}</b></div><div><span>Travel</span><b>${money(finances.travelPence)}</b></div></div><p class="fd-caption">Profit deducts sold cargo cost and travel. Cash flow includes purchases still aboard. No tutorial reward is added.</p><div class="fd-receipts">${receipts.map(receipt => `<div><span><b>${escape(actionLabel(receipt.action))}</b><small>${place(receipt.locationAfter)} · confirmed revision ${receipt.revision}</small></span><span class="fd-receipt-value"><strong>${signed(receipt.creditPence-receipt.debitPence)}</strong><small>Cash movement · profit ${signed(receipt.realizedProfitPence)}</small></span></div>`).join('') || '<p>No confirmed transactions yet.</p>'}</div>`;
+    if (panel === 'ledger') content = `<div class="fd-totals"><div><span>Realized profit / loss</span><b class="${finances.realizedProfitPence < 0 ? 'fd-loss' : 'fd-gain'}">${signed(finances.realizedProfitPence)}</b></div><div><span>Net cash flow</span><b>${signed(finances.netCashFlowPence)}</b></div><div><span>Sales</span><b>${money(finances.salesPence)}</b></div><div><span>Sold cargo cost</span><b>${money(finances.salesCostBasisPence)}</b></div><div><span>Travel</span><b>${money(finances.travelPence)}</b></div>${state.expedition ? `<div><span>Operating expenses</span><b>${money(finances.operatingExpensePence)}</b></div><div><span>Written-off cargo cost</span><b>${money(finances.cargoWriteOffBasisPence)}</b></div><div><span>Capital spend</span><b>${money(finances.capitalSpendPence)}</b></div>` : ''}</div><p class="fd-caption">Profit deducts sold cargo cost, travel, operating expenses and written-off cargo basis. Cash flow includes purchases and capital spending. No tutorial reward is added.</p><div class="fd-receipts">${receipts.map(receipt => `<div><span><b>${escape(actionLabel(receipt.action))}</b><small>${place(receipt.locationAfter)} · confirmed revision ${receipt.revision}</small></span><span class="fd-receipt-value"><strong>${signed(receipt.creditPence-receipt.debitPence)}</strong><small>Cash movement · profit ${signed(receipt.realizedProfitPence)}</small></span></div>`).join('') || '<p>No confirmed transactions yet.</p>'}</div>`;
+    if (panel === 'expedition' && state.expedition) content = expeditionPanel(state, encounter, { disabled, posture, protectCargo, retreatHullPercent, dropSelection, repairPoints, history });
     container.innerHTML = `<div class="fd-game" data-location="${state.locationId}">
-      <header class="fd-header"><div><span class="fd-brand">FRONTIERDOM</span><span class="fd-location">${escape(state.ship.name)} · Docked at ${place(state.locationId)}</span></div><button class="fd-quiet" data-action="panel" data-id="ship" aria-label="Open ship and crew">Crew ${state.crew.length}</button></header>
+      <header class="fd-header"><div><span class="fd-brand">FRONTIERDOM</span><span class="fd-location">${escape(state.ship.name)} · ${state.expedition?.pendingJourney ? 'Crossing pending from' : 'Docked at'} ${place(state.locationId)}</span></div><button class="fd-quiet" data-action="panel" data-id="ship" aria-label="Open ship and crew">Crew ${state.crew.length}</button></header>
       <section class="fd-hud" aria-label="Company overview"><div><span>Available cash</span><strong>${money(state.cashPence)}</strong></div><div><span>Cargo aboard</span><strong>${used}<small> / ${state.ship.capacityUnits}</small></strong></div><button class="fd-quiet" data-action="panel" data-id="ledger"><span>Realized P/L</span><strong class="${finances.realizedProfitPence < 0 ? 'fd-loss' : 'fd-gain'}">${signed(finances.realizedProfitPence)}</strong></button></section>
       <div class="fd-world-window" aria-hidden="true"></div>
-      <section class="fd-mission" aria-label="Current objective" data-objective="${objective.id}"><div class="fd-mission-title"><div><span class="fd-eyebrow">THE OTHER SIDE · ${place(state.locationId).toUpperCase()}</span><h1>${escape(pending ? 'Confirm your saved trade' : objective.title)}</h1></div><button class="fd-quiet fd-guidance-toggle" data-action="guidance" aria-expanded="${guidanceVisible}">${guidanceVisible ? 'Hide guide' : 'Resume guide'}</button></div>
+      <section class="fd-mission ${encounter?.status === 'active' ? 'fd-battle-mission' : ''}" aria-label="Current objective" data-objective="${objective.id}"><div class="fd-mission-title"><div><span class="fd-eyebrow">THE OTHER SIDE · ${place(state.locationId).toUpperCase()}</span><h1>${escape(pending ? 'Confirm your saved trade' : objective.title)}</h1></div><button class="fd-quiet fd-guidance-toggle" data-action="guidance" aria-expanded="${guidanceVisible}">${guidanceVisible ? 'Hide guide' : 'Resume guide'}</button></div>
       ${guidanceVisible && !pending ? `<p class="fd-story">${state.revision === 0 ? `2035. An ancient gate beyond the Moon has opened onto Eden. You own ${escape(state.ship.name)}, one freighter and a chance to build something of your own. ` : confirmedArrival ? 'EDEN-01. Beneath the forests, lights move against the wind. The valley seems to breathe. ' : ''}${escape(objective.story)}</p><span class="fd-captain">${escape(captain?.name || 'Captain')} · Captain’s voyage guide</span>` : ''}
       <div class="fd-feedback" aria-live="polite" role="status">${busy ? 'Contacting station…' : escape(notice)}</div>${error ? `<div class="fd-error" role="alert">${escape(error)}</div>` : ''}
-      ${pending ? `<div class="fd-pending"><p>Outcome not confirmed. The original request is saved; new trades are paused.</p><button data-action="retry" ${busy ? 'disabled' : ''}>Retry original request</button></div>` : `<button class="fd-next" data-action="next" ${disabled ? 'disabled' : ''}>${escape(objective.label)} <span aria-hidden="true">→</span></button>`}
-      <nav class="fd-nav" aria-label="Ship controls">${['market','route','ship','ledger'].map(id => `<button class="fd-quiet" data-action="panel" data-id="${id}" aria-pressed="${panel === id}">${{market:'Market',route:'Route',ship:'Crew',ledger:'Ledger'}[id]}</button>`).join('')}</nav></section>
+      ${pending ? `<div class="fd-pending"><p>Outcome not confirmed. The original request is saved; new trades are paused.</p><button data-action="retry" ${busy ? 'disabled' : ''}>Retry original request</button></div>` : encounter?.status === 'active' ? battleControls(encounter, { disabled, playing, speed }) : `<button class="fd-next" data-action="next" ${disabled ? 'disabled' : ''}>${escape(objective.label)} <span aria-hidden="true">→</span></button>`}
+      <nav class="fd-nav ${state.expedition ? 'fd-nav-expedition' : ''}" aria-label="Ship controls">${['market','route','ship','ledger',...(state.expedition ? ['expedition'] : [])].map(id => `<button class="fd-quiet" data-action="panel" data-id="${id}" aria-pressed="${panel === id}">${{market:'Market',route:'Route',ship:'Crew',ledger:'Ledger',expedition:'Mission'}[id]}</button>`).join('')}</nav></section>
       ${panel ? `<section class="fd-panel" aria-label="${heading[panel]}"><header><h2>${heading[panel]}</h2><button class="fd-quiet" data-action="close-panel" aria-label="Close ${heading[panel]}">Close</button></header><div class="fd-panel-content">${content}<div class="fd-panel-footer"><span>${escape(user.displayName || 'Google account')}</span><button class="fd-quiet" data-action="refresh" ${busy ? 'disabled' : ''}>Sync</button><button class="fd-quiet" data-action="logout" ${busy || logoutBlocked ? 'disabled' : ''}>Sign out</button></div></div></section>` : ''}
-    </div>${quote && !pending ? `<div class="fd-overlay"><section class="fd-dialog" role="dialog" aria-modal="true" aria-labelledby="fd-confirm-title" tabindex="-1"><span class="fd-eyebrow">STATION QUOTE / CONFIRM</span><h2 id="fd-confirm-title">${escape(actionLabel(quote.action))}</h2><p>${quote.action.type === 'travel' ? `Horizon stays at ${place(state.locationId)} until you confirm. Fuel is included; cargo travels with you.` : 'Exact quote from your current station. Prices may change until confirmed.'}</p><dl><div><dt>Pay</dt><dd>${money(quote.debitPence)}</dd></div><div><dt>Receive</dt><dd>${money(quote.creditPence)}</dd></div></dl>${quote.action.type === 'buy' ? `<p class="fd-caption">Cash after purchase ${money(state.cashPence-quote.debitPence)} · cargo ${used+quote.action.quantity}/${state.ship.capacityUnits}. ${guidanceVisible ? 'Keep enough cash for your crossing.' : ''}</p>` : ''}<p class="fd-caption">Expires ${escape(new Date(quote.expiresAt).toLocaleTimeString('en-GB'))}. Confirmed profit and cash flow appear separately in the ledger.</p><div class="fd-dialog-actions"><button class="fd-quiet" data-action="cancel" ${busy ? 'disabled' : ''}>Cancel</button><button data-action="confirm" ${busy ? 'disabled' : ''}>${busy ? 'Confirming…' : quote.action.type === 'travel' ? `Launch for ${place(quote.action.destinationId)}` : 'Confirm transaction'}</button></div></section></div>` : ''}`;
+    </div>${quote && !pending ? `<div class="fd-overlay"><section class="fd-dialog" role="dialog" aria-modal="true" aria-labelledby="fd-confirm-title" tabindex="-1"><span class="fd-eyebrow">STATION QUOTE / CONFIRM</span><h2 id="fd-confirm-title">${escape(actionLabel(quote.action))}</h2><p>${quote.action.type === 'travel' ? `Horizon stays at ${place(state.locationId)} until you confirm. Fuel is included; cargo travels with you.` : 'Exact quote from your current station. Prices may change until confirmed.'}</p><dl><div><dt>Pay</dt><dd>${money(quote.debitPence)}</dd></div><div><dt>Receive</dt><dd>${money(quote.creditPence)}</dd></div></dl>${quoteConsequences(quote)}${quote.action.type === 'buy' ? `<p class="fd-caption">Cash after purchase ${money(state.cashPence-quote.debitPence)} · cargo ${used+quote.action.quantity}/${state.ship.capacityUnits}. ${guidanceVisible ? 'Keep enough cash for your crossing.' : ''}</p>` : ''}<p class="fd-caption">Expires ${escape(new Date(quote.expiresAt).toLocaleTimeString('en-GB'))}. Confirmed profit and cash flow appear separately in the ledger.</p><div class="fd-dialog-actions"><button class="fd-quiet" data-action="cancel" ${busy ? 'disabled' : ''}>Cancel</button><button data-action="confirm" ${busy ? 'disabled' : ''}>${busy ? 'Confirming…' : quote.action.type === 'travel' ? `Launch for ${place(quote.action.destinationId)}` : 'Confirm transaction'}</button></div></section></div>` : ''}`;
     const dialog = container.querySelector('[role="dialog"]');
     if (dialog && (!hadDialog || !dialog.contains(document.activeElement))) dialog.focus();
     else if (focusId) [...container.querySelectorAll('[data-focus]')].find((element) => element.dataset.focus === focusId)?.focus();
@@ -218,12 +261,22 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
     const button = event.target.closest('button[data-action]');
     if (!button || button.disabled || !container.contains(button)) return;
     const action = button.dataset.action, id = button.dataset.id;
+    if (action === 'battle-speed') { speed = Number(id); render(); schedulePlayback(); return; }
+    if (action === 'battle-play') {
+      if(playing) { playing=false;clearTimeout(playbackTimer);render();return; }
+      if (busy || pending || !authChecked || !recoveryReady) return;
+      playing = !playing; render(); schedulePlayback(); return;
+    }
+    if (action === 'battle-instant') { playing = false; clearTimeout(playbackTimer); await advanceBattle(180); return; }
     if (action === 'guidance') {
       guidanceVisible = !guidanceVisible;
       saveGuidance(storage(), state.companyId, guidanceVisible);
       render(); return;
     }
-    if (action === 'panel') { panel = panel === id ? null : id; render(); return; }
+    if (action === 'panel') {
+      if(id==='expedition') { playing=false;clearTimeout(playbackTimer); }
+      panel = panel === id ? null : id; render(); return;
+    }
     if (action === 'close-panel') { panel = null; render(); return; }
     if (action === 'cancel-login') {
       loginSequence++; loginAttempt.cancel(); loginBusy = false; notice = 'Sign-in cancelled. Your progress is unchanged.'; render(); return;
@@ -246,6 +299,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
         if (saved) { try { pending = JSON.parse(saved); } catch { pending = { companyId: 'unreadable-record' }; } }
         if (pending && !accountMismatch && (!!state || pending.userId === user?.id)) throw new Error('Confirm your pending trade before signing out.');
         authChecked = false; recoveryReady = false; quote = null;
+        clearEncounter();
         await api.signOut();
         user = null; state = undefined; selectedLocation = undefined; sessionReady = false; authChecked = true; accountMismatch = false;
         notice = pending ? 'Signed out. Use the original Google account to confirm your saved trade.' : 'Signed out. Your company will be here when you return.';
@@ -258,11 +312,36 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
     if (action === 'refresh') { await connect(); return; }
     if (action === 'retry') { await task(sendPending); return; }
     if (pending || !recoveryReady || !user || !authChecked) return;
+    if (action.startsWith('exp-') || action === 'battle-order' || action === 'battle-history') {
+      playing = false; clearTimeout(playbackTimer);
+      await task(async () => {
+        if (action === 'battle-history') {
+          const companyId=state.companyId, encounterId=encounter.id;
+          const response=await api.encounter(encounterId,Number(id));
+          if(state.companyId!==companyId || encounter?.id!==encounterId) throw new Error('Encounter account changed. Reconnect.');
+          history=checkedEncounter(response.encounter,state); return;
+        }
+        let intent;
+        if(action==='exp-choice') {
+          const journey=state.expedition.pendingJourney;
+          intent=id==='drop' ? dropIntent(journey,dropSelection) : {type:'encounter_choice',encounterId:journey.encounterId,choice:id,
+            ...(['run','fight'].includes(id)?{posture,protectCargo,retreatHullPercent}:{})};
+        }
+        if(action==='battle-order') intent=advanceIntent(encounter,1,id==='retreat'?{type:'retreat'}:{type:'posture',posture:id});
+        if(action==='exp-repair') intent={type:'repair',points:repairPoints};
+        if(action==='exp-upgrade') intent={type:'buy_upgrade',upgradeId:'cargo-bracing'};
+        if(action==='exp-relay') intent={type:'secure_relay',method:'agreement'};
+        restoreFocus=action;quote=(await api.quote(intent)).quote;
+      });
+      return;
+    }
+    if(state.expedition?.pendingJourney && !['next','confirm'].includes(action)) return;
     await task(async () => {
       if (action === 'next') {
-        const objective = fallbackObjective || voyageObjective(state);
+        const objective = expeditionObjective(state, encounter) || fallbackObjective || voyageObjective(state);
         if (objective.panel) { panel = objective.panel; selectedLocation = state.locationId; return; }
         restoreFocus = 'next';
+        if(objective.action.type==='enroll_expedition') { quote=(await api.quote(objective.action)).quote; return; }
         const reviewed = await reviewObjective(api, state, objective);
         quote = reviewed.quote;
         fallbackObjective = reviewed.objective;
@@ -293,6 +372,12 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
 
   function handleInput(event) {
     if (event.target.dataset.quantity) quantities.set(event.target.dataset.quantity, Number(event.target.value));
+    if (event.target.dataset.drop) dropSelection[event.target.dataset.drop]=Number(event.target.value);
+    const setting=event.target.dataset.setting;
+    if(setting==='posture') posture=event.target.value;
+    if(setting==='protectCargo') protectCargo=event.target.checked;
+    if(setting==='retreatHullPercent') retreatHullPercent=Number(event.target.value);
+    if(setting==='repairPoints') repairPoints=Number(event.target.value);
   }
 
   function handleKey(event) {
@@ -309,6 +394,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
   }
 
   function resume() {
+    if(document.visibilityState!=='visible') { playing=false;clearTimeout(playbackTimer);return; }
     if (document.visibilityState === 'visible' && !busy && !loginBusy) {
       quote = null;
       connect();
@@ -326,6 +412,7 @@ export function mountUI(container, { api, onState = () => {}, googleAuthOrigin }
   connect();
   return { destroy() {
     destroyed = true;
+    clearEncounter();
     loginSequence++;
     loginAttempt.cancel();
     container.removeEventListener('click', handleClick);
