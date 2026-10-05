@@ -103,8 +103,11 @@ try {
   await page.waitForSelector('.fd-error'); assert.deepEqual(initialized, []); authOutage = false;
   await page.locator('[data-action="login"]').click(); await page.waitForSelector('[aria-label="Company overview"]');
   assert.equal(navigationCount, 1); assert.deepEqual(initialized, ['A']);
-  assert.match(await page.locator('.fd-account').innerText(), /Mara <Captain>/);
-  assert.equal(await page.locator('.fd-account captain').count(), 0);
+  await page.locator('.fd-nav [data-action="panel"][data-id="ship"]').click();
+  assert.match(await page.locator('.fd-panel-footer').innerText(), /Mara <Captain>/);
+  assert.equal(await page.locator('.fd-panel-footer captain').count(), 0);
+  await page.locator('[data-action="close-panel"]').click();
+  await page.locator('.fd-nav [data-action="panel"][data-id="market"]').click();
   await page.locator('[data-quantity="medicine"]').fill('1');
   await page.locator('[data-action="quote"][data-id="medicine"]').click(); loseResponse = true;
   await page.locator('[data-action="confirm"]').click(); await page.waitForSelector('[data-action="retry"]:enabled');
@@ -131,16 +134,19 @@ try {
   assert.equal(payloads.length, 2); assert.deepEqual(payloads[0], payloads[1]);
   assert.equal(companies.get('A').ship.cargo.find(item => item.commodityId === 'medicine').quantity, 1);
   const restored = structuredClone(companies.get('A'));
+  await page.locator('.fd-nav [data-action="panel"][data-id="ship"]').click();
   await page.locator('[data-action="logout"]').click(); await page.waitForSelector('[data-action="login"]:enabled');
   await page.locator('[data-action="login"]').click(); await page.waitForSelector('[aria-label="Company overview"]');
   assert.deepEqual(companies.get('A'), restored); assert.equal(companies.size, 1);
   // Race AFTER A preflight: the verified server cookie switches to B before POST.
   companies.set('B', createInitialState('company-B'));
   const beforeB = structuredClone(companies.get('B'));
+  await page.locator('.fd-nav [data-action="panel"][data-id="market"]').click();
   await page.locator('[data-quantity="medicine"]').fill('1');
   await page.locator('[data-action="quote"][data-id="medicine"]').click(); loseResponse = true;
   await page.locator('[data-action="confirm"]').click(); await page.waitForSelector('[data-action="retry"]:enabled');
   const racedIntent = await pending(), start = payloads.length - 1;
+  await page.locator('[data-action="close-panel"]').click();
   raceSwitch = true; await page.locator('[data-action="retry"]').click();
   await page.waitForSelector('.fd-auth .fd-error');
   assert.equal(await pending(), racedIntent); assert.deepEqual(companies.get('B'), beforeB);
