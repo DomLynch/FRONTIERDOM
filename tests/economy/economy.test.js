@@ -64,7 +64,7 @@ test('golden round trip earns exactly £2593.50 including both travel charges', 
   assert.equal(state.locationId, 'earth');
   assert.deepEqual(state.ship.cargo, []);
   assert.deepEqual(state.finances, { purchasesPence: 612600, salesPence: 931950,
-    salesCostBasisPence: 612600, travelPence: 60000, netCashFlowPence: 259350, realizedProfitPence: 259350 });
+    salesCostBasisPence: 612600, travelPence: 60000, netCashFlowPence: 259350, realizedProfitPence: 259350, operatingExpensePence: 0, cargoWriteOffBasisPence: 0, capitalSpendPence: 0 });
   assert.equal(profit, 259350);
 });
 
