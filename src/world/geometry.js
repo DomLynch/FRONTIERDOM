@@ -84,7 +84,7 @@ export function growth(device, height, radius, bend = 1) {
   }
   for (let j = 0; j < levels; j++) for (let i = 0; i < segments; i++) {
     const a = j * (segments + 1) + i, b = a + segments + 1;
-    indices.push(a, a + 1, b, a + 1, b + 1, b);
+    indices.push(a, b, a + 1, a + 1, b, b + 1);
   }
   return meshFromTriangles(device, positions, indices);
 }

@@ -1,13 +1,17 @@
 /** Cosmetic crossing follows a confirmed location change; snapshots are never modified. */
 export function createTransit() {
   let location = null;
+  let company = null;
   let seconds = 0;
   return {
-    accept(next, reducedMotion = false) {
+    accept(next, reducedMotion = false, companyId = null) {
       if (next !== 'earth' && next !== 'eden') throw new RangeError('Expected earth or eden locationId');
-      const changed = location !== null && next !== location;
+      const sameCompany = company === companyId;
+      const changed = sameCompany && location !== null && next !== location;
+      company = companyId;
       location = next;
-      if (changed) seconds = reducedMotion ? 0 : 1.6;
+      if (!sameCompany) seconds = 0;
+      else if (changed) seconds = reducedMotion ? 0 : 1.6;
       else if (reducedMotion) seconds = 0;
       return changed;
     },

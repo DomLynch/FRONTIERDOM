@@ -112,7 +112,7 @@ export function createWorld(app) {
   }
 
   // Horizon: narrowed cockpit, chamfered keel, cargo saddles and articulated twin engines.
-  const ship = root('Horizon freighter'); ship.setLocalPosition(0, 0, 5); ship.setLocalEulerAngles(0, -30, 0);
+  const ship = root('Horizon freighter'); ship.setLocalPosition(0, 0, -3); ship.setLocalEulerAngles(0, -30, 0);
   custom(ship, 'Chamfered pressure hull', loft(device, [[-5, 0.75, 0.6], [-3.7, 1.15, 0.8], [2.5, 1.1, 0.8], [4.1, 0.75, 0.5, 0.13], [4.7, 0.5, 0.32, 0.18]]), [0, 0.6, 0], ivory);
   custom(ship, 'Cockpit crown', loft(device, [[2.1, 0.8, 0.3], [3.3, 0.75, 0.5], [4.4, 0.44, 0.15]]), [0, 1.35, 0], steel);
   primitive(ship, 'Angled front window', 'box', [0, 1.63, 3.94], [0.85, 0.38, 0.06], glass, [-25, 0, 0]);
@@ -166,7 +166,7 @@ export function createWorld(app) {
     if (disposed || lost || !canvas.clientWidth || !canvas.clientHeight) return;
     const aspect = canvas.clientWidth / canvas.clientHeight;
     // Frame the whole gate at tall-phone widths; preserve a readable foreground ship.
-    if (aspect < 0.85) { camera.setPosition(16, 14, 62); aim.set(0, 5, -14); }
+    if (aspect < 0.85) { camera.setPosition(10, 16, 72); aim.set(1, 3, -14); }
     else { camera.setPosition(22, 13, 30); aim.set(0, 4, -10); }
     camera.lookAt(aim);
   }
@@ -177,7 +177,7 @@ export function createWorld(app) {
     key.light.color = next === 'earth' ? new Color(1, 0.9, 0.77) : new Color(0.94, 0.86, 1);
     fill.light.color = next === 'earth' ? new Color(0.45, 0.65, 0.83) : new Color(0.44, 0.78, 0.68);
   }
-  function cancelMotion() { transit.cancel(); crossing.enabled = false; ship.setLocalPosition(0, 0, 5); }
+  function cancelMotion() { transit.cancel(); crossing.enabled = false; ship.setLocalPosition(0, 0, -3); }
   function update(dt) {
     if (disposed || lost || document.hidden || reducedMotion) return;
     elapsed += dt;
@@ -185,8 +185,8 @@ export function createWorld(app) {
     crossing.enabled = transit.active;
     if (transit.active) {
       crossing.setLocalScale(1 + (1 - progress) * 3, 1 + (1 - progress) * 3, 1);
-      ship.setLocalPosition(0, Math.sin(progress * Math.PI) * 0.3, 5 - Math.sin(progress * Math.PI) * 3);
-    } else ship.setLocalPosition(0, Math.sin(elapsed * 0.7) * 0.035, 5);
+      ship.setLocalPosition(0, Math.sin(progress * Math.PI) * 0.3, -3 - Math.sin(progress * Math.PI) * 3);
+    } else ship.setLocalPosition(0, Math.sin(elapsed * 0.7) * 0.035, -3);
     stars.setLocalPosition(Math.sin(elapsed * 0.04) * 0.7, 0, 0);
   }
   function motionChanged(event) { reducedMotion = event.matches; if (reducedMotion) cancelMotion(); }
@@ -205,9 +205,9 @@ export function createWorld(app) {
   return {
     setState(state) {
       if (disposed) return;
-      transit.accept(state?.locationId, reducedMotion || document.hidden || lost);
+      transit.accept(state?.locationId, reducedMotion || document.hidden || lost, state?.companyId ?? null);
       showLocation(state.locationId);
-      if (!transit.active) { crossing.enabled = false; ship.setLocalPosition(0, 0, 5); }
+      if (!transit.active) { crossing.enabled = false; ship.setLocalPosition(0, 0, -3); }
     },
     destroy() {
       if (disposed) return; disposed = true;
